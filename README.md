@@ -4,13 +4,16 @@ Outil web (100% statique, sans backend) pour suivre l'avancement de travaux, ins
 
 ## Concept
 
-- **Catégories** : définissez vos propres catégories de suivi (ex: *Cable Cleats*, *PIM Gate*, *Scotch Kote*, *Gearing Repair*), chacune avec sa couleur — comme la légende manuscrite sur l'affiche.
-- **Points** : chaque point de travail est un cercle divisé en parts (une par catégorie), exactement comme sur l'affiche. Cliquez une part pour la marquer faite/non faite.
+- **62 fondations** : le projet par défaut ("Parc éolien — 62 fondations") reconstruit la grille lettre (A–M, sans I) / rang (1–7) visible sur l'affiche papier, en conservant la même orientation. C'est une reconstruction au mieux depuis la photo d'affiche manuscrite — les positions et labels se corrigent facilement (glisser-déposer, renommer dans les détails du point).
+- **Catégories principales (8 max)** : le camembert au centre de chaque fondation, une part par catégorie (ex: *Cable Cleats*, *PIM Gate*, *Scotch Kote*, *Gearing Repair*…), chacune avec sa couleur.
+- **Variables secondaires (16 max)** : anneau de petits points autour du cercle, pour suivre des tâches précises (boulons, échelle, anodes, etc.), indépendamment des catégories principales.
+- **Zoom & déplacement fluides** : pincer pour zoomer (tactile), molette (souris), boutons +/− et "vue d'ensemble" ; glisser pour déplacer la vue. Optimisé pour consulter les 62 fondations d'un coup d'œil sur mobile, puis zoomer sur un secteur précis.
 - **Liaisons** : reliez les points entre eux (mode "Relier") pour représenter un tracé de câble ou un cheminement.
 - **Points bloquants** : marquez un point d'une croix ✕ (comme les marqueurs rouges sur l'affiche) avec une note associée.
 - **Punch List** : liste de tâches restantes à cocher, équivalente aux annotations manuscrites sur le côté de l'affiche.
-- **Avancement** : barres de progression calculées automatiquement par catégorie et au global.
+- **Avancement** : barres de progression calculées automatiquement par catégorie, par variable secondaire et au global.
 - **Projets multiples** : plusieurs chantiers/plans peuvent être gérés séparément.
+- **Mobile-first** : sur petit écran, les catégories et le suivi/punch-list se rangent dans des tiroirs (☰ / 📋) pour laisser toute la place à la carte.
 
 Les données sont sauvegardées automatiquement dans le navigateur (`localStorage`). Utilisez **Exporter/Importer** pour sauvegarder un projet en JSON ou le transférer entre appareils.
 
