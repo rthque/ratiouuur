@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Suivi de Chantier — Punch List Numérique</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>📋 Suivi de Chantier</h1>
+    <select id="project-select" title="Projet"></select>
+    <button id="btn-new-project" class="btn btn-ghost" title="Créer un nouveau projet">+ Projet</button>
+    <button id="btn-rename-project" class="btn btn-ghost" title="Renommer le projet">✎</button>
+    <button id="btn-delete-project" class="btn btn-ghost btn-danger" title="Supprimer le projet">🗑</button>
+  </div>
+  <div class="topbar-right">
+    <span id="updated-at" class="updated-at"></span>
+    <button id="btn-export" class="btn btn-ghost">Exporter</button>
+    <button id="btn-import" class="btn btn-ghost">Importer</button>
+    <input type="file" id="file-import" accept="application/json" hidden />
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel panel-left">
+    <section>
+      <h2>Catégories de suivi</h2>
+      <p class="hint">Chaque catégorie correspond à une part du camembert sur chaque point (ex: câblage, boulonnage, peinture…).</p>
+      <ul id="category-list" class="category-list"></ul>
+      <button id="btn-add-category" class="btn btn-primary btn-block">+ Ajouter une catégorie</button>
+    </section>
+    <section>
+      <h2>Légende</h2>
+      <div class="legend-block">
+        <div class="legend-item"><span class="legend-swatch" style="background:transparent;border:2px solid var(--line)"></span> Non fait</div>
+        <div class="legend-item"><span class="legend-x">✕</span> Point bloquant</div>
+      </div>
+    </section>
+  </aside>
+
+  <section class="panel panel-canvas">
+    <div class="toolbar">
+      <div class="mode-group" role="group" aria-label="Mode d'édition">
+        <button class="btn mode-btn active" data-mode="select" title="Cliquer une part = coché / décoché. Cliquer le centre = détails.">🖊 Sélection</button>
+        <button class="btn mode-btn" data-mode="connect" title="Cliquer deux points pour les relier">🔗 Relier</button>
+        <button class="btn mode-btn" data-mode="delete" title="Cliquer un point ou une liaison pour la supprimer">🗑 Supprimer</button>
+      </div>
+      <button id="btn-add-node" class="btn btn-primary">+ Ajouter un point</button>
+      <span class="hint canvas-hint" id="canvas-hint"></span>
+    </div>
+    <div class="canvas-scroll" id="canvas-scroll">
+      <svg id="canvas" width="2200" height="1500" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </section>
+
+  <aside class="panel panel-right">
+    <section>
+      <h2>Avancement</h2>
+      <div id="progress-overall" class="progress-overall"></div>
+      <div id="progress-list" class="progress-list"></div>
+    </section>
+    <section>
+      <h2>Punch List</h2>
+      <p class="hint">Points restants à traiter, comme sur l'affiche papier.</p>
+      <ul id="punch-list" class="punch-list"></ul>
+      <form id="punch-form" class="punch-form">
+        <input id="punch-input" type="text" placeholder="Ex: A04 — manque vis SREW" autocomplete="off" />
+        <button type="submit" class="btn btn-primary">Ajouter</button>
+      </form>
+    </section>
+  </aside>
+</main>
+
+<div id="node-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>Détails du point</h3>
+      <button id="modal-close" class="btn btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>Nom / repère</span>
+        <input id="modal-label" type="text" />
+      </label>
+      <label class="field checkbox-field">
+        <input id="modal-issue" type="checkbox" />
+        <span>Point bloquant (✕)</span>
+      </label>
+      <div class="field">
+        <span>Statut par catégorie</span>
+        <ul id="modal-categories" class="modal-category-list"></ul>
+      </div>
+      <label class="field">
+        <span>Note</span>
+        <textarea id="modal-note" rows="3" placeholder="Commentaire libre…"></textarea>
+      </label>
+      <button id="modal-add-punch" class="btn btn-ghost btn-block">+ Ajouter à la punch list</button>
+    </div>
+    <div class="modal-footer">
+      <button id="modal-delete" class="btn btn-danger">Supprimer le point</button>
+      <button id="modal-save" class="btn btn-primary">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
