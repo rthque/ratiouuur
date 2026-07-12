@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'worksite-tracker:v3';
+  const STORAGE_KEY = 'worksite-tracker:v4';
   const SVGNS = 'http://www.w3.org/2000/svg';
 
   const NODE_R = 24;       // inner pie radius (8 main categories)
@@ -31,6 +31,24 @@
     L: [1, 2, 4, 5, 6, 7],
     M: [1, 2, 3, 4, 5, 6, 7],
   };
+
+  // Inter-array cable strings, read off the reference site map ("Dieppe Le
+  // Tréport" cable schedule): each pair is one cable segment. 'OSS' is the
+  // offshore substation. This replaces any earlier guessed topology.
+  const STRING_EDGES = [
+    ['OSS', 'K7'], ['OSS', 'K6'], ['OSS', 'K5'], ['OSS', 'L7'], ['OSS', 'K4'], ['OSS', 'J1'], ['OSS', 'J2'],
+    ['K7', 'J7'], ['J7', 'H7'], ['H7', 'G7'], ['G7', 'F7'], ['F7', 'E7'], ['E7', 'D7'],
+    ['K6', 'J6'], ['J6', 'H6'], ['H6', 'G6'], ['G6', 'F6'], ['F6', 'E6'], ['E6', 'D6'],
+    ['K5', 'J5'], ['J5', 'H5'], ['H5', 'G5'], ['G5', 'F5'], ['F5', 'E5'], ['E5', 'D5'],
+    ['L7', 'L6'], ['L6', 'L5'], ['L5', 'L4'], ['L4', 'L2'], ['L2', 'L1'],
+    ['L7', 'M7'], ['L6', 'M6'], ['L5', 'M5'], ['L4', 'M4'], ['L4', 'M3'], ['L2', 'M2'], ['L1', 'M1'],
+    ['K4', 'J4'], ['J4', 'H4'], ['H4', 'G4'], ['G4', 'E4'], ['E4', 'D4'],
+    ['H4', 'E3'], ['E3', 'D3'], ['D3', 'C3'], ['C3', 'B3'], ['B3', 'B2'],
+    ['D4', 'C4'], ['C4', 'B4'], ['B4', 'A4'], ['A4', 'A3'], ['A3', 'A2'],
+    ['K4', 'K3'], ['B2', 'C2'],
+    ['J1', 'H1'], ['H1', 'G1'], ['G1', 'F1'], ['F1', 'E1'],
+    ['J2', 'H2'], ['H2', 'G2'], ['G2', 'F2'], ['F2', 'E2'],
+  ];
 
   let state = null;
   let mode = 'select'; // 'select' | 'connect' | 'delete'
@@ -132,22 +150,10 @@
       });
     });
 
-    // inter-array cable strings: chain nodes within each column (as drawn on the poster)
-    COLS.forEach((col) => {
-      const rows = (COLUMN_ROWS[col] || []).slice().sort((a, b) => a - b);
-      for (let i = 0; i < rows.length - 1; i++) {
-        const a = project.nodes.find((n) => n.label === `${col}${rows[i]}`);
-        const b = project.nodes.find((n) => n.label === `${col}${rows[i + 1]}`);
-        if (a && b) project.connections.push({ id: uid(), a: a.id, b: b.id, kind: 'array' });
-      }
-    });
-
-    // offshore substation (OSS) — sits near K4/L4 on the poster, not one of the 62 foundations
-    const kRef = project.nodes.find((n) => n.label === 'K4');
-    const lRef = project.nodes.find((n) => n.label === 'L4');
-    const ossPos = (kRef && lRef)
-      ? { x: (kRef.x + lRef.x) / 2 + GRID_UNIT * 0.4, y: (kRef.y + lRef.y) / 2 }
-      : { x: 0, y: 0 };
+    // offshore substation (OSS) — sits at the J3 grid slot on the reference map
+    // (no turbine there), not one of the 62 foundations.
+    const jIndex = COLS.indexOf('J');
+    const ossPos = gridToWorld(jIndex, 3);
     const oss = {
       id: uid(),
       label: 'OSS',
@@ -161,18 +167,11 @@
     };
     project.nodes.push(oss);
 
-    // export/hub cables: link the substation to the nearest foundation of each string
-    COLS.forEach((col) => {
-      const rows = (COLUMN_ROWS[col] || []).slice().sort((a, b) => a - b);
-      let nearest = null;
-      let nearestDist = Infinity;
-      rows.forEach((row) => {
-        const node = project.nodes.find((n) => n.label === `${col}${row}`);
-        if (!node) return;
-        const d = Math.hypot(node.x - oss.x, node.y - oss.y);
-        if (d < nearestDist) { nearestDist = d; nearest = node; }
-      });
-      if (nearest) project.connections.push({ id: uid(), a: oss.id, b: nearest.id, kind: 'export' });
+    // inter-array cable strings, read off the reference site map
+    STRING_EDGES.forEach(([labelA, labelB]) => {
+      const a = project.nodes.find((n) => n.label === labelA);
+      const b = project.nodes.find((n) => n.label === labelB);
+      if (a && b) project.connections.push({ id: uid(), a: a.id, b: b.id });
     });
 
     return project;
@@ -627,7 +626,7 @@
       line.setAttribute('data-conn-id', conn.id);
       line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
       line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-      line.setAttribute('class', `connection-line${conn.kind === 'export' ? ' connection-line--export' : ''}${mode === 'delete' ? ' deletable' : ''}`);
+      line.setAttribute('class', `connection-line${mode === 'delete' ? ' deletable' : ''}`);
       line.addEventListener('click', (e) => {
         e.stopPropagation();
         if (mode === 'delete') deleteConnection(conn.id);

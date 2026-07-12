@@ -262,8 +262,7 @@ select {
 .node-hub-ring { fill: var(--panel); stroke: var(--text); stroke-opacity: 0.7; stroke-width: 1.5; }
 .node-outer-dot { cursor: pointer; stroke: var(--text); stroke-opacity: 0.55; stroke-width: 1; }
 .node-issue-x { fill: var(--danger); font-weight: 700; pointer-events: none; user-select: none; }
-.connection-line { stroke: #d1495b; stroke-width: 2; fill: none; cursor: pointer; opacity: 0.85; }
-.connection-line--export { stroke: #2563eb; stroke-width: 3.5; opacity: 0.9; }
+.connection-line { stroke: #64748b; stroke-width: 1.75; fill: none; cursor: pointer; opacity: 0.8; }
 .connection-line.deletable:hover { stroke: var(--danger); stroke-width: 4; }
 .node-group.selected .node-hub-ring { stroke: var(--accent); stroke-width: 2.5; }
 .substation-marker { fill: #0f172a; stroke: var(--text); stroke-opacity: 0.6; stroke-width: 1.5; cursor: pointer; }
