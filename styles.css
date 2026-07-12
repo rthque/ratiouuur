@@ -260,7 +260,7 @@ select {
 .node-wedge { cursor: pointer; stroke: var(--text); stroke-width: 1.75; stroke-opacity: 0.7; }
 .node-hub { cursor: pointer; }
 .node-hub-ring { fill: var(--panel); stroke: var(--text); stroke-opacity: 0.7; stroke-width: 1.5; }
-.node-outer-dot { cursor: pointer; stroke: var(--text); stroke-opacity: 0.55; stroke-width: 1; }
+.node-ring-cell { cursor: pointer; stroke: var(--text); stroke-opacity: 0.7; stroke-width: 1.5; }
 .node-issue-x { fill: var(--danger); font-weight: 700; pointer-events: none; user-select: none; }
 .connection-line { stroke: #64748b; stroke-width: 1.75; fill: none; cursor: pointer; opacity: 0.8; }
 .connection-line.deletable:hover { stroke: var(--danger); stroke-width: 4; }
