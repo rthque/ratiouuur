@@ -1,27 +1,46 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Suivi de Chantier — Punch List Numérique</title>
+<title>treFOU — BOP tracker</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
+<div id="login-overlay" class="login-overlay hidden">
+  <div class="login-card">
+    <h1 class="login-title">treFOU</h1>
+    <p class="login-subtitle">BOP works tracker — tap your name to start</p>
+    <div id="login-rows" class="login-rows"></div>
+    <div id="login-password" class="login-password hidden">
+      <p id="login-password-label" class="login-password-label"></p>
+      <form id="login-password-form">
+        <input id="login-password-input" type="password" placeholder="Password" autocomplete="off" />
+        <button type="submit" class="btn btn-primary">Enter</button>
+        <button type="button" id="login-cancel" class="btn btn-ghost">Cancel</button>
+      </form>
+      <p id="login-error" class="login-error hidden">Wrong password.</p>
+    </div>
+    <button id="login-visitor" class="btn login-visitor-btn">👁 Visitor (read-only)</button>
+  </div>
+</div>
+
 <header class="topbar">
   <div class="topbar-left">
-    <button id="btn-drawer-left" class="btn btn-ghost drawer-toggle" title="Catégories">☰</button>
-    <h1>📋 Suivi de Chantier</h1>
-    <select id="project-select" title="Projet"></select>
-    <button id="btn-new-project" class="btn btn-ghost" title="Créer un nouveau projet">+ Projet</button>
-    <button id="btn-rename-project" class="btn btn-ghost" title="Renommer le projet">✎</button>
-    <button id="btn-delete-project" class="btn btn-ghost btn-danger" title="Supprimer le projet">🗑</button>
+    <button id="btn-drawer-left" class="btn btn-ghost drawer-toggle" title="Categories">☰</button>
+    <h1>treFOU</h1>
+    <select id="project-select" title="Project"></select>
+    <button id="btn-new-project" class="btn btn-ghost admin-only" title="New project">+ Project</button>
+    <button id="btn-rename-project" class="btn btn-ghost admin-only" title="Rename project">✎</button>
+    <button id="btn-delete-project" class="btn btn-ghost btn-danger admin-only" title="Delete project">🗑</button>
   </div>
   <div class="topbar-right">
     <span id="updated-at" class="updated-at"></span>
-    <button id="btn-export" class="btn btn-ghost">Exporter</button>
-    <button id="btn-import" class="btn btn-ghost">Importer</button>
-    <input type="file" id="file-import" accept="application/json" hidden />
-    <button id="btn-drawer-right" class="btn btn-ghost drawer-toggle" title="Avancement &amp; Punch list">📋</button>
+    <button id="btn-procedures" class="btn btn-ghost" title="Method statements">📖</button>
+    <span id="user-chip" class="user-chip"></span>
+    <button id="btn-logout" class="btn btn-ghost" title="Switch user">⇦</button>
+    <button id="btn-drawer-right" class="btn btn-ghost drawer-toggle" title="Progress &amp; punch list">📋</button>
   </div>
 </header>
 
@@ -31,39 +50,45 @@
   <aside class="panel panel-left" id="panel-left">
     <div class="panel-scroll">
       <section>
-        <h2>Catégories principales <span class="count-badge" id="cat-count-badge"></span></h2>
-        <p class="hint">8 parts max au centre de chaque fondation (le camembert intérieur).</p>
+        <h2>Main categories <span class="count-badge" id="cat-count-badge"></span></h2>
+        <p class="hint">Up to 8 slices in the central pie of each foundation.</p>
         <ul id="category-list" class="category-list"></ul>
-        <button id="btn-add-category" class="btn btn-primary btn-block">+ Ajouter une catégorie</button>
+        <button id="btn-add-category" class="btn btn-primary btn-block admin-only">+ Add category</button>
       </section>
       <section>
-        <h2>Catégories secondaires <span class="count-badge" id="micro-count-badge"></span></h2>
-        <p class="hint">16 cellules max sur la deuxième couronne (suivi de tâches précises).</p>
+        <h2>Secondary categories <span class="count-badge" id="micro-count-badge"></span></h2>
+        <p class="hint">Up to 16 cells on the outer ring.</p>
         <ul id="micro-list" class="category-list micro-list"></ul>
-        <button id="btn-add-micro" class="btn btn-primary btn-block">+ Ajouter une catégorie</button>
+        <button id="btn-add-micro" class="btn btn-primary btn-block admin-only">+ Add category</button>
       </section>
       <section>
-        <h2>Légende</h2>
+        <h2>Legend</h2>
         <div class="legend-block">
-          <div class="legend-item"><span class="legend-swatch" style="background:transparent;border:2px solid var(--line)"></span> Non fait</div>
-          <div class="legend-item"><span class="legend-x">✕</span> Point bloquant</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:transparent;border:2px solid var(--line)"></span> Not done</div>
+          <div class="legend-item"><span class="legend-swatch legend-hatch"></span> Partially done</div>
+          <div class="legend-item"><span class="legend-x">✕</span> Blocking point</div>
         </div>
+      </section>
+      <section id="admin-section" class="hidden">
+        <h2>Admin</h2>
+        <button id="btn-admin-toggle" class="btn btn-block">🔧 Admin mode: OFF</button>
+        <p class="hint">Admin mode unlocks category editing, method-statement editing and project management.</p>
       </section>
     </div>
   </aside>
 
   <section class="panel panel-canvas">
     <div class="toolbar">
-      <div class="mode-group" role="group" aria-label="Mode d'édition">
-        <button class="btn mode-btn active" data-mode="select" title="Cliquer une part = coché / décoché. Cliquer le centre = détails.">🖊</button>
-        <button class="btn mode-btn" data-mode="connect" title="Cliquer deux points pour les relier">🔗</button>
-        <button class="btn mode-btn" data-mode="delete" title="Cliquer un point ou une liaison pour la supprimer">🗑</button>
+      <div class="mode-group admin-only" role="group" aria-label="Edit mode">
+        <button class="btn mode-btn active" data-mode="select" title="Tap a slice/cell to check. Tap the centre for details.">🖊</button>
+        <button class="btn mode-btn" data-mode="connect" title="Tap two points to link them">🔗</button>
+        <button class="btn mode-btn" data-mode="delete" title="Tap a point or a cable to delete it">🗑</button>
       </div>
-      <button id="btn-add-node" class="btn btn-primary" title="Ajouter un point">+ Point</button>
+      <button id="btn-add-node" class="btn btn-primary admin-only" title="Add a point">+ Point</button>
       <div class="zoom-group" role="group" aria-label="Zoom">
-        <button id="btn-zoom-out" class="btn" title="Zoom arrière">−</button>
-        <button id="btn-zoom-reset" class="btn" title="Vue d'ensemble">⛶</button>
-        <button id="btn-zoom-in" class="btn" title="Zoom avant">+</button>
+        <button id="btn-zoom-out" class="btn" title="Zoom out">−</button>
+        <button id="btn-zoom-reset" class="btn" title="Fit view">⛶</button>
+        <button id="btn-zoom-in" class="btn" title="Zoom in">+</button>
       </div>
       <span class="hint canvas-hint" id="canvas-hint"></span>
     </div>
@@ -75,17 +100,26 @@
   <aside class="panel panel-right" id="panel-right">
     <div class="panel-scroll">
       <section>
-        <h2>Avancement</h2>
+        <h2>Progress</h2>
         <div id="progress-overall" class="progress-overall"></div>
         <div id="progress-list" class="progress-list"></div>
       </section>
       <section>
-        <h2>Punch List</h2>
-        <p class="hint">Points restants à traiter, comme sur l'affiche papier.</p>
+        <h2>Share &amp; backup</h2>
+        <div class="stack-buttons">
+          <button id="btn-recap-all" class="btn btn-block">📋 Copy 24h recap</button>
+          <button id="btn-export-csv" class="btn btn-block">📊 Export CSV backup</button>
+          <button id="btn-export" class="btn btn-block">💾 Export project (JSON)</button>
+          <button id="btn-import" class="btn btn-block admin-only">📥 Import project (JSON)</button>
+          <input type="file" id="file-import" accept="application/json" hidden />
+        </div>
+      </section>
+      <section>
+        <h2>Punch list</h2>
         <ul id="punch-list" class="punch-list"></ul>
-        <form id="punch-form" class="punch-form">
-          <input id="punch-input" type="text" placeholder="Ex: A04 — manque vis SREW" autocomplete="off" />
-          <button type="submit" class="btn btn-primary">Ajouter</button>
+        <form id="punch-form" class="punch-form editor-only">
+          <input id="punch-input" type="text" placeholder="e.g. A04 — missing SREW screw" autocomplete="off" />
+          <button type="submit" class="btn btn-primary">Add</button>
         </form>
       </section>
     </div>
@@ -95,38 +129,60 @@
 <div id="node-modal" class="modal-overlay hidden">
   <div class="modal-card">
     <div class="modal-header">
-      <h3 id="modal-title">Détails de la fondation</h3>
+      <h3 id="modal-title">Foundation details</h3>
       <button id="modal-close" class="btn btn-ghost">✕</button>
     </div>
     <div class="modal-body">
       <label class="field">
-        <span>Nom / repère</span>
+        <span>Name / marker</span>
         <input id="modal-label" type="text" />
       </label>
-      <label class="field checkbox-field">
+      <label class="field checkbox-field editor-only">
         <input id="modal-issue" type="checkbox" />
-        <span>Point bloquant (✕)</span>
+        <span>Blocking point (✕)</span>
       </label>
       <div class="field">
-        <span>Catégories principales</span>
+        <span>Main categories</span>
         <ul id="modal-categories" class="modal-category-list"></ul>
       </div>
       <div class="field">
-        <span>Catégories secondaires</span>
+        <span>Secondary categories</span>
         <ul id="modal-micro" class="modal-category-list modal-micro-list"></ul>
       </div>
+      <div class="field">
+        <span>Reports (repeatable)</span>
+        <ul id="modal-reports" class="modal-category-list"></ul>
+      </div>
       <label class="field">
-        <span>Note</span>
-        <textarea id="modal-note" rows="3" placeholder="Commentaire libre…"></textarea>
+        <span>Free note</span>
+        <textarea id="modal-note" rows="3" placeholder="Free comment…"></textarea>
       </label>
-      <button id="modal-add-punch" class="btn btn-ghost btn-block">+ Ajouter à la punch list</button>
+      <div class="stack-buttons">
+        <button id="modal-recap" class="btn btn-block">📋 Copy 24h recap of this FOU</button>
+        <button id="modal-add-punch" class="btn btn-ghost btn-block editor-only">+ Add to punch list</button>
+      </div>
     </div>
     <div class="modal-footer">
-      <button id="modal-delete" class="btn btn-danger">Supprimer le point</button>
-      <button id="modal-save" class="btn btn-primary">Fermer</button>
+      <button id="modal-delete" class="btn btn-danger admin-only">Delete point</button>
+      <button id="modal-save" class="btn btn-primary">Close</button>
     </div>
   </div>
 </div>
+
+<div id="proc-modal" class="modal-overlay hidden">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-header">
+      <h3>📖 Method statements</h3>
+      <div class="modal-header-actions">
+        <button id="proc-lang" class="btn btn-ghost" title="Toggle language">🇫🇷 FR</button>
+        <button id="proc-close" class="btn btn-ghost">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" id="proc-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
 
 <script src="app.js"></script>
 </body>

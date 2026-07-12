@@ -1,8 +1,10 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'worksite-tracker:v6';
+  const STORAGE_KEY = 'worksite-tracker:v7';
+  const USER_KEY = 'worksite-tracker:user';
   const SVGNS = 'http://www.w3.org/2000/svg';
+  const LOCALE = 'en-GB';
 
   const NODE_R = 30;       // inner pie radius (8 main categories)
   const HUB_R = 8;         // center hub (open details)
@@ -13,6 +15,17 @@
   const MAX_CATEGORIES = 8;
   const MAX_MICRO = 16;
 
+  // ---------- team ----------
+  const PASSWORD = 'BOP';
+  const ADMIN_NAMES = ['Antonin', 'Yohan', 'Etienne', 'Quentin'];
+  const LOGIN_ROWS = [
+    { names: ['Antonin', 'Yohan'], style: 'sky' },
+    { split: true, left: ['Quentin', 'Yoan', 'LP', 'Benoît'], right: ['Etienne', 'Baptiste', 'Greg', 'Seb'], style: 'orange' },
+    { names: ['Silvio', 'Stan'], style: 'sky' },
+    { names: ['Guilhem', 'Angel', 'Mika', 'Max', 'Erwan', 'Luc', 'Mathieu'], style: 'sky' },
+  ];
+
+  // ---------- farm layout ----------
   // Foundation grid (letter column A–M, no I, numeric row 1–7), validated
   // against the reference cable map: K03 does not exist; K01 does (cable
   // WT154 L1-K1). Labels are zero-padded (A02, K01…).
@@ -40,31 +53,25 @@
   // map ("Dieppe Le Tréport"): each cable there is labelled with its endpoint
   // pair — e.g. WT62 (G4-E4), WT72 (H4-E3), WT12 (K4-J4) — and the WT
   // numbering walks each string outward from the OSS, which pins the feeder
-  // of every string. 8 strings radiate from the OSS (which sits on the empty
-  // L3 grid slot).
+  // of every string. 8 strings radiate from the OSS (empty L3 grid slot).
   const STRING_EDGES = [
-    // String rangée 7 : OSS→K07→J07→…→D07 (WT31-37)
     ['OSS', 'K07'], ['K07', 'J07'], ['J07', 'H07'], ['H07', 'G07'], ['G07', 'F07'], ['F07', 'E07'], ['E07', 'D07'],
-    // String rangée 6, feeder en K05 (WT41-48)
     ['OSS', 'K05'], ['K05', 'K06'], ['K06', 'J06'], ['J06', 'H06'], ['H06', 'G06'], ['G06', 'F06'], ['F06', 'E06'], ['E06', 'D06'],
-    // String rangée 5, feeder en K04 via J04 (WT11-18)
     ['OSS', 'K04'], ['K04', 'J04'], ['J04', 'J05'], ['J05', 'H05'], ['H05', 'G05'], ['G05', 'F05'], ['F05', 'E05'], ['E05', 'D05'],
-    // String rangée 4 puis colonne A (WT61-68)
     ['OSS', 'G04'], ['G04', 'E04'], ['E04', 'D04'], ['D04', 'C04'], ['C04', 'B04'], ['B04', 'A04'], ['A04', 'A03'], ['A03', 'A02'],
-    // String H04 → rangée 3, avec antennes C02 et E02 (WT71-78)
     ['OSS', 'H04'], ['H04', 'E03'], ['E03', 'D03'], ['D03', 'C03'], ['C03', 'B03'], ['B03', 'B02'], ['C03', 'C02'], ['E03', 'E02'],
-    // String sud : J01 puis rangées 1 et 2 (WT81-88)
     ['OSS', 'J01'], ['J01', 'J02'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['H01', 'G01'], ['G01', 'F01'], ['F01', 'E01'],
-    // String L04→L07 en peigne avec les antennes M04→M07 (WT121-128)
     ['OSS', 'L04'], ['L04', 'L05'], ['L05', 'L06'], ['L06', 'L07'], ['L07', 'M07'], ['L04', 'M04'], ['L05', 'M05'], ['L06', 'M06'],
-    // String cluster sud-est : L02, L01, K01, M01-M03 (WT151-157, dont WT154 L1-K1)
     ['OSS', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L01', 'M01'], ['L02', 'M02'], ['M02', 'M03'],
   ];
 
   let state = null;
+  let user = null; // { name, role: 'tech'|'visitor', admin: bool }
   let mode = 'select'; // 'select' | 'connect' | 'delete'
   let pendingConnectFrom = null;
   let openNodeId = null;
+  let pendingLoginName = null;
+  let procLang = 'en';
   let svgEl = null;
   let camera = { x: 0, y: 0, scale: 1, minScale: 0.1, maxScale: 8 };
 
@@ -92,19 +99,6 @@
     return { x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
   }
 
-  // A checked task is stored as { at: ISO date, by: name|null } (null = unchecked),
-  // so the details panel can show when (and later by whom) it was validated.
-  function checkStamp() {
-    return { at: new Date().toISOString(), by: null };
-  }
-
-  function formatStamp(stamp) {
-    if (!stamp || !stamp.at) return '';
-    const d = new Date(stamp.at);
-    const datePart = `${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
-    return stamp.by ? `${datePart} — ${stamp.by}` : datePart;
-  }
-
   function ringSegmentPath(rIn, rOut, a0, a1) {
     const large = (a1 - a0) > Math.PI ? 1 : 0;
     const pt = (r, a) => `${r * Math.cos(a)},${r * Math.sin(a)}`;
@@ -116,12 +110,159 @@
     return `hsl(${hue}, 60%, 45%)`;
   }
 
-  // ---------- grid -> world position (keeps the poster's orientation) ----------
-  function gridToWorld(colIndex, row) {
-    return {
-      x: (colIndex - row) * GRID_UNIT,
-      y: -(colIndex + row) * GRID_UNIT,
-    };
+  // A checked task is stored as { at: ISO date, by: name|null, partial?: true }
+  // (null = not done) so details can show when and by whom it was validated.
+  function checkStamp(partial) {
+    const stamp = { at: new Date().toISOString(), by: user ? user.name : null };
+    if (partial) stamp.partial = true;
+    return stamp;
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${d.toLocaleDateString(LOCALE)} ${d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  function formatStamp(stamp) {
+    if (!stamp || !stamp.at) return '';
+    const datePart = formatDate(stamp.at);
+    return stamp.by ? `${datePart} — ${stamp.by}` : datePart;
+  }
+
+  function showToast(message) {
+    const el = document.getElementById('toast');
+    el.textContent = message;
+    el.classList.remove('hidden');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => el.classList.add('hidden'), 2600);
+  }
+
+  function copyText(text, doneMessage) {
+    const finish = () => showToast(doneMessage || 'Copied to clipboard.');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(finish).catch(() => fallbackCopy(text, finish));
+    } else {
+      fallbackCopy(text, finish);
+    }
+  }
+
+  function fallbackCopy(text, finish) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* noop */ }
+    document.body.removeChild(ta);
+    finish();
+  }
+
+  // ---------- permissions ----------
+  function canEdit() {
+    return !!user && user.role !== 'visitor';
+  }
+
+  function isAdminName() {
+    return !!user && ADMIN_NAMES.includes(user.name);
+  }
+
+  function isAdmin() {
+    return canEdit() && isAdminName() && !!user.admin;
+  }
+
+  function applyPermissionClasses() {
+    document.body.classList.toggle('can-edit', canEdit());
+    document.body.classList.toggle('is-admin', isAdmin());
+    const adminSection = document.getElementById('admin-section');
+    adminSection.classList.toggle('hidden', !isAdminName());
+    const toggleBtn = document.getElementById('btn-admin-toggle');
+    toggleBtn.textContent = `🔧 Admin mode: ${isAdmin() ? 'ON' : 'OFF'}`;
+    toggleBtn.classList.toggle('active', isAdmin());
+    const chip = document.getElementById('user-chip');
+    if (user) {
+      chip.textContent = user.role === 'visitor' ? '👁 Visitor' : `👤 ${user.name}${isAdmin() ? ' ⚙' : ''}`;
+    } else {
+      chip.textContent = '';
+    }
+  }
+
+  // ---------- auth ----------
+  function loadUser() {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.name && parsed.role) return parsed;
+    } catch (e) { /* noop */ }
+    return null;
+  }
+
+  function saveUser() {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_KEY);
+  }
+
+  function loginAs(name, role) {
+    user = { name, role, admin: false };
+    saveUser();
+    document.getElementById('login-overlay').classList.add('hidden');
+    applyPermissionClasses();
+    render();
+    safeFitToContent();
+  }
+
+  function logout() {
+    user = null;
+    saveUser();
+    applyPermissionClasses();
+    showLogin();
+  }
+
+  function showLogin() {
+    pendingLoginName = null;
+    document.getElementById('login-password').classList.add('hidden');
+    document.getElementById('login-error').classList.add('hidden');
+    document.getElementById('login-password-input').value = '';
+    document.getElementById('login-overlay').classList.remove('hidden');
+  }
+
+  function renderLogin() {
+    const rows = document.getElementById('login-rows');
+    rows.innerHTML = '';
+    LOGIN_ROWS.forEach((row) => {
+      const div = document.createElement('div');
+      div.className = 'login-row';
+      const addBtn = (parent, name, style) => {
+        const btn = document.createElement('button');
+        btn.className = `btn login-name login-name--${style}`;
+        btn.textContent = name;
+        btn.addEventListener('click', () => {
+          pendingLoginName = name;
+          document.getElementById('login-password-label').textContent = `Password for ${name}:`;
+          document.getElementById('login-password').classList.remove('hidden');
+          document.getElementById('login-error').classList.add('hidden');
+          const input = document.getElementById('login-password-input');
+          input.value = '';
+          input.focus();
+        });
+        parent.appendChild(btn);
+      };
+      if (row.split) {
+        const left = document.createElement('div');
+        left.className = 'login-group';
+        row.left.forEach((n) => addBtn(left, n, row.style));
+        const right = document.createElement('div');
+        right.className = 'login-group';
+        row.right.forEach((n) => addBtn(right, n, row.style));
+        div.classList.add('login-row--split');
+        div.append(left, right);
+      } else {
+        row.names.forEach((n) => addBtn(div, n, row.style));
+      }
+      rows.appendChild(div);
+    });
   }
 
   // ---------- state ----------
@@ -132,10 +273,56 @@
       updatedAt: new Date().toISOString(),
       categories: [],
       microVars: [],
+      reportTypes: [],
+      procedures: {},
       nodes: [],
       connections: [],
       punchList: [],
     };
+  }
+
+  function defaultReportTypes() {
+    return [
+      'Survey In/OUT',
+      'Ferry daily check inspection',
+      'Control if all Aconex inspections are 100%',
+      'SRL load indicator report',
+      'Guano on all platforms & smells report',
+      'Boatlanding tracking on SharePoint',
+      'Cable cleats report',
+      'Punch',
+    ].map((name) => ({ id: uid(), name }));
+  }
+
+  function normalizeNode(node, project) {
+    node.status = node.status || {};
+    node.micro = node.micro || {};
+    node.taskComments = node.taskComments || {};
+    node.reports = node.reports || {};
+    [node.status, node.micro].forEach((map) => {
+      Object.keys(map).forEach((k) => {
+        if (map[k] === true) map[k] = { at: null, by: null };
+        else if (map[k] === false) map[k] = null;
+      });
+    });
+    project.categories.concat(project.microVars).forEach((item) => {
+      if (!(item.id in node.status) && !(item.id in node.micro)) {
+        (project.categories.includes(item) ? node.status : node.micro)[item.id] = null;
+      }
+    });
+  }
+
+  function normalizeProject(project) {
+    project.categories = project.categories || [];
+    project.microVars = project.microVars || [];
+    project.connections = project.connections || [];
+    project.punchList = project.punchList || [];
+    project.procedures = project.procedures || {};
+    if (!Array.isArray(project.reportTypes) || !project.reportTypes.length) {
+      project.reportTypes = defaultReportTypes();
+    }
+    (project.nodes || []).forEach((n) => normalizeNode(n, project));
+    return project;
   }
 
   function seedWindFarmProject() {
@@ -157,6 +344,8 @@
     ];
     project.microVars = microDefs.map((c) => ({ id: uid(), ...c }));
 
+    project.reportTypes = defaultReportTypes();
+
     COLS.forEach((col, colIndex) => {
       (COLUMN_ROWS[col] || []).forEach((row) => {
         const pos = gridToWorld(colIndex, row);
@@ -167,6 +356,8 @@
           y: pos.y,
           status: {},
           micro: {},
+          taskComments: {},
+          reports: {},
           issue: false,
           note: '',
         };
@@ -180,20 +371,20 @@
     // reference map, not one of the 62 foundations.
     const lIndex = COLS.indexOf('L');
     const ossPos = gridToWorld(lIndex, 3);
-    const oss = {
+    project.nodes.push({
       id: uid(),
       label: 'OSS',
       x: ossPos.x,
       y: ossPos.y,
       status: {},
       micro: {},
+      taskComments: {},
+      reports: {},
       issue: false,
-      note: 'Sous-station électrique (offshore substation)',
+      note: 'Offshore substation',
       substation: true,
-    };
-    project.nodes.push(oss);
+    });
 
-    // inter-array cable strings, read off the reference site map
     STRING_EDGES.forEach(([labelA, labelB]) => {
       const a = project.nodes.find((n) => n.label === labelA);
       const b = project.nodes.find((n) => n.label === labelB);
@@ -208,7 +399,10 @@
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.projects && parsed.activeProjectId) return parsed;
+        if (parsed && parsed.projects && parsed.activeProjectId) {
+          Object.values(parsed.projects).forEach(normalizeProject);
+          return parsed;
+        }
       } catch (e) { /* corrupt, fall through to seed */ }
     }
     const demo = seedWindFarmProject();
@@ -227,6 +421,14 @@
 
   function getActiveProject() {
     return state.projects[state.activeProjectId];
+  }
+
+  // ---------- grid -> world position (keeps the map orientation) ----------
+  function gridToWorld(colIndex, row) {
+    return {
+      x: (colIndex - row) * GRID_UNIT,
+      y: -(colIndex + row) * GRID_UNIT,
+    };
   }
 
   // ---------- mutations ----------
@@ -347,7 +549,6 @@
           startDist: dist(pts[0], pts[1]) || 1,
           startScale: camera.scale,
           startMid: mid(pts[0], pts[1]),
-          startCamera: { x: camera.x, y: camera.y },
           moved: false,
         };
       }
@@ -415,7 +616,7 @@
     if (!project || !target) return;
     const lineEl = target.closest && target.closest('.connection-line');
     if (lineEl) {
-      if (mode === 'delete') deleteConnection(lineEl.dataset.connId);
+      if (mode === 'delete' && isAdmin()) deleteConnection(lineEl.dataset.connId);
       return;
     }
     const groupEl = target.closest && target.closest('.node-group');
@@ -424,7 +625,6 @@
       if (node) handleNodeClick(node, (target.dataset && target.dataset.kind) || 'body');
       return;
     }
-    // tap on empty canvas
     if (mode === 'connect' && pendingConnectFrom) {
       pendingConnectFrom = null;
       renderCanvas();
@@ -432,11 +632,11 @@
   }
 
   function handleNodeClick(node, kind) {
-    if (mode === 'delete') {
+    if (mode === 'delete' && isAdmin()) {
       deleteNode(node.id);
       return;
     }
-    if (mode === 'connect') {
+    if (mode === 'connect' && isAdmin()) {
       if (!pendingConnectFrom) {
         pendingConnectFrom = node.id;
         renderCanvas();
@@ -451,17 +651,17 @@
       return;
     }
     // select mode
-    if (kind === 'hub' || kind === 'body') {
+    if (kind === 'hub' || kind === 'body' || !canEdit()) {
       openNodeModal(node.id);
     } else if (kind.startsWith('wedge-')) {
       const catId = kind.slice(6);
-      node.status[catId] = node.status[catId] ? null : checkStamp();
+      node.status[catId] = node.status[catId] && !node.status[catId].partial ? null : checkStamp();
       touchAndSave();
       renderCanvas();
       renderProgress();
     } else if (kind.startsWith('micro-')) {
       const varId = kind.slice(6);
-      node.micro[varId] = node.micro[varId] ? null : checkStamp();
+      node.micro[varId] = node.micro[varId] && !node.micro[varId].partial ? null : checkStamp();
       touchAndSave();
       renderCanvas();
       renderProgress();
@@ -477,14 +677,13 @@
     renderCanvas();
     renderProgress();
     renderPunchList();
+    applyPermissionClasses();
   }
 
   function renderHeader() {
     const project = getActiveProject();
     const el = document.getElementById('updated-at');
-    if (!project) { el.textContent = ''; return; }
-    const d = new Date(project.updatedAt);
-    el.textContent = `Mis à jour : ${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    el.textContent = project ? `Updated: ${formatDate(project.updatedAt)}` : '';
   }
 
   function renderProjectSelect() {
@@ -501,34 +700,7 @@
       });
   }
 
-  function renderEditableList(listEl, items, max, onColor, onName, onDelete) {
-    listEl.innerHTML = '';
-    items.forEach((item) => {
-      const li = document.createElement('li');
-      li.className = 'category-row';
-
-      const color = document.createElement('input');
-      color.type = 'color';
-      color.value = toHex(item.color);
-      color.addEventListener('input', () => onColor(item, color.value));
-
-      const name = document.createElement('input');
-      name.type = 'text';
-      name.value = item.name;
-      name.addEventListener('change', () => onName(item, name.value));
-
-      const del = document.createElement('button');
-      del.className = 'btn btn-ghost btn-danger';
-      del.textContent = '✕';
-      del.addEventListener('click', () => onDelete(item));
-
-      li.append(color, name, del);
-      listEl.appendChild(li);
-    });
-  }
-
   function toHex(color) {
-    // color inputs require #rrggbb; convert hsl(...) strings via canvas-less parse
     if (color.startsWith('#')) return color;
     const m = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
     if (!m) return '#888888';
@@ -553,54 +725,112 @@
     return `#${toH(r)}${toH(g)}${toH(b)}`;
   }
 
+  function renderCategoryGroup(listEl, items, groupKey) {
+    const project = getActiveProject();
+    listEl.innerHTML = '';
+    const admin = isAdmin();
+
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.className = 'category-row';
+
+      if (admin) {
+        const color = document.createElement('input');
+        color.type = 'color';
+        color.value = toHex(item.color);
+        color.addEventListener('input', () => {
+          item.color = color.value;
+          touchAndSave();
+          renderCanvas();
+          renderProgress();
+        });
+
+        const name = document.createElement('input');
+        name.type = 'text';
+        name.value = item.name;
+        name.addEventListener('change', () => {
+          item.name = name.value.trim() || item.name;
+          touchAndSave();
+          renderProgress();
+        });
+
+        const move = document.createElement('button');
+        move.className = 'btn btn-ghost';
+        move.textContent = '⇄';
+        move.title = groupKey === 'categories' ? 'Move to secondary' : 'Move to main';
+        move.addEventListener('click', () => {
+          const from = groupKey === 'categories' ? project.categories : project.microVars;
+          const to = groupKey === 'categories' ? project.microVars : project.categories;
+          const max = groupKey === 'categories' ? MAX_MICRO : MAX_CATEGORIES;
+          if (to.length >= max) { showToast('Target group is full.'); return; }
+          const idx = from.findIndex((c) => c.id === item.id);
+          from.splice(idx, 1);
+          to.push(item);
+          const fromMap = groupKey === 'categories' ? 'status' : 'micro';
+          const toMap = groupKey === 'categories' ? 'micro' : 'status';
+          project.nodes.forEach((n) => {
+            n[toMap][item.id] = n[fromMap][item.id] || null;
+            delete n[fromMap][item.id];
+          });
+          touchAndSave();
+          render();
+        });
+
+        const del = document.createElement('button');
+        del.className = 'btn btn-ghost btn-danger';
+        del.textContent = '✕';
+        del.title = 'Delete category';
+        del.addEventListener('click', () => {
+          if (!confirm(`Delete category "${item.name}"?`)) return;
+          if (groupKey === 'categories') {
+            project.categories = project.categories.filter((c) => c.id !== item.id);
+            project.nodes.forEach((n) => { delete n.status[item.id]; });
+          } else {
+            project.microVars = project.microVars.filter((c) => c.id !== item.id);
+            project.nodes.forEach((n) => { delete n.micro[item.id]; });
+          }
+          touchAndSave();
+          render();
+        });
+
+        li.append(color, name, move, del);
+      } else {
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.style.background = item.color;
+        const name = document.createElement('span');
+        name.className = 'category-name';
+        name.textContent = item.name;
+        li.append(dot, name);
+      }
+      listEl.appendChild(li);
+    });
+  }
+
   function renderCategories() {
     const project = getActiveProject();
-    const list = document.getElementById('category-list');
-    const badge = document.getElementById('cat-count-badge');
-    const addBtn = document.getElementById('btn-add-category');
-    list.innerHTML = '';
     if (!project) return;
+    const badge = document.getElementById('cat-count-badge');
     badge.textContent = `${project.categories.length}/${MAX_CATEGORIES}`;
+    const addBtn = document.getElementById('btn-add-category');
     addBtn.disabled = project.categories.length >= MAX_CATEGORIES;
-    addBtn.style.opacity = addBtn.disabled ? 0.5 : 1;
-
-    renderEditableList(
-      list, project.categories, MAX_CATEGORIES,
-      (cat, val) => { cat.color = val; touchAndSave(); renderCanvas(); renderProgress(); },
-      (cat, val) => { cat.name = val.trim() || cat.name; touchAndSave(); renderProgress(); },
-      (cat) => {
-        if (!confirm(`Supprimer la catégorie "${cat.name}" ?`)) return;
-        project.categories = project.categories.filter((c) => c.id !== cat.id);
-        project.nodes.forEach((n) => { delete n.status[cat.id]; });
-        touchAndSave();
-        render();
-      },
-    );
+    renderCategoryGroup(document.getElementById('category-list'), project.categories, 'categories');
   }
 
   function renderMicroList() {
     const project = getActiveProject();
-    const list = document.getElementById('micro-list');
-    const badge = document.getElementById('micro-count-badge');
-    const addBtn = document.getElementById('btn-add-micro');
-    list.innerHTML = '';
     if (!project) return;
+    const badge = document.getElementById('micro-count-badge');
     badge.textContent = `${project.microVars.length}/${MAX_MICRO}`;
+    const addBtn = document.getElementById('btn-add-micro');
     addBtn.disabled = project.microVars.length >= MAX_MICRO;
-    addBtn.style.opacity = addBtn.disabled ? 0.5 : 1;
+    renderCategoryGroup(document.getElementById('micro-list'), project.microVars, 'microVars');
+  }
 
-    renderEditableList(
-      list, project.microVars, MAX_MICRO,
-      (mv, val) => { mv.color = val; touchAndSave(); renderCanvas(); renderProgress(); },
-      (mv, val) => { mv.name = val.trim() || mv.name; touchAndSave(); renderProgress(); },
-      (mv) => {
-        if (!confirm(`Supprimer la variable "${mv.name}" ?`)) return;
-        project.microVars = project.microVars.filter((m) => m.id !== mv.id);
-        project.nodes.forEach((n) => { delete n.micro[mv.id]; });
-        touchAndSave();
-        render();
-      },
-    );
+  function statusFill(stamp, item) {
+    if (!stamp) return 'var(--panel)';
+    if (stamp.partial) return `url(#hatch-${item.id})`;
+    return item.color;
   }
 
   function renderCanvas() {
@@ -609,6 +839,28 @@
     if (!project) return;
     const catCount = project.categories.length;
     const microCount = project.microVars.length;
+
+    // hatch patterns (one per category) for "partially done"
+    const defs = document.createElementNS(SVGNS, 'defs');
+    project.categories.concat(project.microVars).forEach((item) => {
+      const pattern = document.createElementNS(SVGNS, 'pattern');
+      pattern.setAttribute('id', `hatch-${item.id}`);
+      pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+      pattern.setAttribute('width', '7');
+      pattern.setAttribute('height', '7');
+      pattern.setAttribute('patternTransform', 'rotate(45)');
+      const bgRect = document.createElementNS(SVGNS, 'rect');
+      bgRect.setAttribute('width', '7');
+      bgRect.setAttribute('height', '7');
+      bgRect.setAttribute('fill', 'var(--panel)');
+      const stripe = document.createElementNS(SVGNS, 'rect');
+      stripe.setAttribute('width', '3.5');
+      stripe.setAttribute('height', '7');
+      stripe.setAttribute('fill', item.color);
+      pattern.append(bgRect, stripe);
+      defs.appendChild(pattern);
+    });
+    svgEl.appendChild(defs);
 
     project.connections.forEach((conn) => {
       const a = project.nodes.find((n) => n.id === conn.a);
@@ -629,7 +881,6 @@
       g.setAttribute('transform', `translate(${node.x},${node.y})`);
 
       if (node.substation) {
-        // discreet marker: small outlined square with the OSS label inside
         const size = NODE_R * 1.5;
         const rect = document.createElementNS(SVGNS, 'rect');
         rect.setAttribute('x', String(-size / 2));
@@ -666,7 +917,7 @@
         circle.setAttribute('r', String(NODE_R));
         circle.setAttribute('class', 'node-wedge');
         circle.setAttribute('data-kind', `wedge-${cat.id}`);
-        circle.style.fill = node.status[cat.id] ? cat.color : 'var(--panel)';
+        circle.style.fill = statusFill(node.status[cat.id], cat);
         g.appendChild(circle);
       } else {
         const slice = (2 * Math.PI) / catCount;
@@ -677,17 +928,14 @@
           path.setAttribute('d', wedgePath(0, 0, NODE_R, start, end));
           path.setAttribute('class', 'node-wedge');
           path.setAttribute('data-kind', `wedge-${cat.id}`);
-          path.style.fill = node.status[cat.id] ? cat.color : 'var(--panel)';
+          path.style.fill = statusFill(node.status[cat.id], cat);
           g.appendChild(path);
         });
       }
 
       if (microCount > 0) {
-        // second ring: one annular cell per secondary variable, with the same
-        // dark dividers as the central pie
         const microSlice = (2 * Math.PI) / microCount;
         project.microVars.forEach((mv, i) => {
-          // a lone variable still renders as a full ring (two half-cells)
           const spans = microCount === 1
             ? [[-Math.PI / 2, Math.PI / 2], [Math.PI / 2, (3 * Math.PI) / 2]]
             : [[-Math.PI / 2 + i * microSlice, -Math.PI / 2 + (i + 1) * microSlice]];
@@ -696,7 +944,7 @@
             cell.setAttribute('d', ringSegmentPath(RING_IN, RING_OUT, a0, a1));
             cell.setAttribute('class', 'node-ring-cell');
             cell.setAttribute('data-kind', `micro-${mv.id}`);
-            cell.style.fill = node.micro[mv.id] ? mv.color : 'var(--panel)';
+            cell.style.fill = statusFill(node.micro[mv.id], mv);
             g.appendChild(cell);
           });
         });
@@ -751,7 +999,7 @@
       header.innerHTML = `<strong>${escapeHtml(title)}</strong>`;
       listEl.appendChild(header);
       items.forEach((item) => {
-        const done = foundationNodes.filter((n) => n[statusKey][item.id]).length;
+        const done = foundationNodes.filter((n) => n[statusKey][item.id] && !n[statusKey][item.id].partial).length;
         totalDone += done;
         totalSlots += nodeCount;
         const pct = nodeCount ? Math.round((done / nodeCount) * 100) : 0;
@@ -765,14 +1013,14 @@
       });
     }
 
-    addGroup('Catégories principales', project.categories, 'status');
-    addGroup('Catégories secondaires', project.microVars, 'micro');
+    addGroup('Main categories', project.categories, 'status');
+    addGroup('Secondary categories', project.microVars, 'micro');
 
     const overallPct = totalSlots ? Math.round((totalDone / totalSlots) * 100) : 0;
     overallEl.innerHTML = `
-      <div class="progress-row-label"><span><strong>Avancement global</strong></span><span class="pct">${overallPct}%</span></div>
+      <div class="progress-row-label"><span><strong>Overall progress</strong></span><span class="pct">${overallPct}%</span></div>
       <div class="progress-bar-track"><div class="progress-bar-fill" style="width:${overallPct}%; background:var(--accent)"></div></div>
-      <div class="hint" style="margin:6px 0 0;">${nodeCount} fondations</div>
+      <div class="hint" style="margin:6px 0 0;">${nodeCount} foundations</div>
     `;
   }
 
@@ -788,6 +1036,7 @@
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = item.done;
+      cb.disabled = !canEdit();
       cb.addEventListener('change', () => {
         item.done = cb.checked;
         touchAndSave();
@@ -797,16 +1046,20 @@
       const span = document.createElement('span');
       span.textContent = item.text;
 
-      const del = document.createElement('button');
-      del.className = 'btn btn-ghost';
-      del.textContent = '✕';
-      del.addEventListener('click', () => {
-        project.punchList = project.punchList.filter((p) => p.id !== item.id);
-        touchAndSave();
-        renderPunchList();
-      });
+      li.append(cb, span);
 
-      li.append(cb, span, del);
+      if (canEdit()) {
+        const del = document.createElement('button');
+        del.className = 'btn btn-ghost';
+        del.textContent = '✕';
+        del.addEventListener('click', () => {
+          project.punchList = project.punchList.filter((p) => p.id !== item.id);
+          touchAndSave();
+          renderPunchList();
+        });
+        li.appendChild(del);
+      }
+
       ul.appendChild(li);
     });
   }
@@ -817,23 +1070,26 @@
     return project && project.nodes.find((n) => n.id === openNodeId);
   }
 
+  function stampState(stamp) {
+    if (!stamp) return 'none';
+    return stamp.partial ? 'partial' : 'done';
+  }
+
   function renderModalChecklist(listEl, items, node, statusKey) {
     listEl.innerHTML = '';
+    const editable = canEdit();
 
-    if (items.length > 1) {
+    if (editable && items.length > 1) {
       const li = document.createElement('li');
       li.className = 'modal-check-all';
-      const allDone = items.every((item) => !!node[statusKey][item.id]);
+      const allDone = items.every((item) => stampState(node[statusKey][item.id]) === 'done');
       const btn = document.createElement('button');
       btn.className = 'btn btn-ghost';
-      btn.textContent = allDone ? 'Tout décocher' : 'Tout cocher';
+      btn.textContent = allDone ? 'Uncheck all' : 'Check all';
       btn.addEventListener('click', () => {
         items.forEach((item) => {
-          if (allDone) {
-            node[statusKey][item.id] = null;
-          } else if (!node[statusKey][item.id]) {
-            node[statusKey][item.id] = checkStamp();
-          }
+          if (allDone) node[statusKey][item.id] = null;
+          else if (stampState(node[statusKey][item.id]) !== 'done') node[statusKey][item.id] = checkStamp();
         });
         touchAndSave();
         renderCanvas();
@@ -848,17 +1104,6 @@
       const li = document.createElement('li');
       li.className = 'modal-category-row';
 
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = !!node[statusKey][item.id];
-      cb.addEventListener('change', () => {
-        node[statusKey][item.id] = cb.checked ? checkStamp() : null;
-        touchAndSave();
-        renderCanvas();
-        renderProgress();
-        renderModalChecklist(listEl, items, node, statusKey);
-      });
-
       const dot = document.createElement('span');
       dot.className = 'dot';
       dot.style.background = item.color;
@@ -867,14 +1112,137 @@
       label.textContent = item.name;
       label.className = 'modal-category-name';
 
-      li.append(cb, dot, label);
+      li.append(dot, label);
 
-      const stampText = formatStamp(node[statusKey][item.id]);
-      if (stampText) {
+      const stamp = node[statusKey][item.id];
+      const stateNow = stampState(stamp);
+
+      if (editable) {
+        const seg = document.createElement('span');
+        seg.className = 'segmented';
+        [
+          { key: 'none', text: '—', title: 'Not done' },
+          { key: 'partial', text: '◧', title: 'Partially done' },
+          { key: 'done', text: '✓', title: 'Done' },
+        ].forEach((opt) => {
+          const b = document.createElement('button');
+          b.className = `seg-btn${stateNow === opt.key ? ' active' : ''}`;
+          b.textContent = opt.text;
+          b.title = opt.title;
+          b.addEventListener('click', () => {
+            if (opt.key === 'none') node[statusKey][item.id] = null;
+            else node[statusKey][item.id] = checkStamp(opt.key === 'partial');
+            touchAndSave();
+            renderCanvas();
+            renderProgress();
+            renderModalChecklist(listEl, items, node, statusKey);
+          });
+          seg.appendChild(b);
+        });
+        li.appendChild(seg);
+
+        const commentBtn = document.createElement('button');
+        commentBtn.className = 'btn btn-ghost btn-comment';
+        commentBtn.textContent = '💬';
+        commentBtn.title = 'Task comment';
+        commentBtn.addEventListener('click', () => {
+          const current = node.taskComments[item.id] || '';
+          const next = prompt(`Comment for "${item.name}" on ${node.label}:`, current);
+          if (next === null) return;
+          if (next.trim()) node.taskComments[item.id] = next.trim();
+          else delete node.taskComments[item.id];
+          touchAndSave();
+          renderModalChecklist(listEl, items, node, statusKey);
+        });
+        li.appendChild(commentBtn);
+      } else if (stateNow !== 'none') {
+        const badge = document.createElement('span');
+        badge.className = 'state-badge';
+        badge.textContent = stateNow === 'done' ? '✓ done' : '◧ partial';
+        li.appendChild(badge);
+      }
+
+      const metaText = formatStamp(stamp);
+      if (metaText) {
         const meta = document.createElement('span');
         meta.className = 'check-meta';
-        meta.textContent = stampText;
+        meta.textContent = stateNow === 'partial' ? `partial · ${metaText}` : metaText;
         li.appendChild(meta);
+      }
+
+      const comment = node.taskComments[item.id];
+      if (comment) {
+        const c = document.createElement('div');
+        c.className = 'task-comment';
+        c.textContent = `💬 ${comment}`;
+        li.appendChild(c);
+      }
+
+      listEl.appendChild(li);
+    });
+  }
+
+  function renderModalReports(node) {
+    const project = getActiveProject();
+    const listEl = document.getElementById('modal-reports');
+    listEl.innerHTML = '';
+    const editable = canEdit();
+
+    project.reportTypes.forEach((rt) => {
+      const entries = node.reports[rt.id] || [];
+      const li = document.createElement('li');
+      li.className = 'modal-category-row report-row';
+
+      const label = document.createElement('span');
+      label.className = 'modal-category-name';
+      label.textContent = rt.name;
+      li.appendChild(label);
+
+      const count = document.createElement('span');
+      count.className = 'report-count';
+      count.textContent = `×${entries.length}`;
+      li.appendChild(count);
+
+      if (editable) {
+        const add = document.createElement('button');
+        add.className = 'btn btn-ghost';
+        add.textContent = '+1';
+        add.title = 'Add one occurrence (now)';
+        add.addEventListener('click', () => {
+          node.reports[rt.id] = entries.concat([checkStamp()]);
+          touchAndSave();
+          renderModalReports(node);
+        });
+        li.appendChild(add);
+
+        if (entries.length) {
+          const undo = document.createElement('button');
+          undo.className = 'btn btn-ghost';
+          undo.textContent = '↺';
+          undo.title = 'Remove last occurrence';
+          undo.addEventListener('click', () => {
+            node.reports[rt.id] = entries.slice(0, -1);
+            touchAndSave();
+            renderModalReports(node);
+          });
+          li.appendChild(undo);
+        }
+      }
+
+      if (entries.length) {
+        const details = document.createElement('details');
+        details.className = 'report-dates';
+        const summary = document.createElement('summary');
+        summary.textContent = `last: ${formatStamp(entries[entries.length - 1])}`;
+        details.appendChild(summary);
+        const ul = document.createElement('ul');
+        entries.slice().reverse().forEach((e) => {
+          const d = document.createElement('li');
+          d.textContent = formatStamp(e);
+          ul.appendChild(d);
+        });
+        details.appendChild(ul);
+        li.appendChild(details);
       }
 
       listEl.appendChild(li);
@@ -887,19 +1255,26 @@
     if (!node) return;
     const project = getActiveProject();
 
-    document.getElementById('modal-label').value = node.label;
+    const labelInput = document.getElementById('modal-label');
+    labelInput.value = node.label;
+    labelInput.disabled = !isAdmin();
     document.getElementById('modal-issue').checked = !!node.issue;
-    document.getElementById('modal-note').value = node.note || '';
-    document.getElementById('modal-title').textContent = node.substation ? 'Détails de la sous-station' : 'Détails de la fondation';
+    const noteEl = document.getElementById('modal-note');
+    noteEl.value = node.note || '';
+    noteEl.disabled = !canEdit();
+    document.getElementById('modal-title').textContent = node.substation ? 'Substation details' : `Foundation ${node.label}`;
 
     const catListEl = document.getElementById('modal-categories');
     const microListEl = document.getElementById('modal-micro');
+    const reportsEl = document.getElementById('modal-reports');
     if (node.substation) {
-      catListEl.innerHTML = '<li class="hint">Non applicable à la sous-station.</li>';
+      catListEl.innerHTML = '<li class="hint">Not applicable to the substation.</li>';
       microListEl.innerHTML = '';
+      reportsEl.innerHTML = '';
     } else {
       renderModalChecklist(catListEl, project.categories, node, 'status');
       renderModalChecklist(microListEl, project.microVars, node, 'micro');
+      renderModalReports(node);
     }
 
     document.getElementById('node-modal').classList.remove('hidden');
@@ -909,6 +1284,142 @@
     document.getElementById('node-modal').classList.add('hidden');
     openNodeId = null;
     render();
+  }
+
+  // ---------- 24h recap & CSV backup ----------
+  function recapLinesForNode(node, project, sinceMs) {
+    const lines = [];
+    const isRecent = (stamp) => stamp && stamp.at && (Date.now() - new Date(stamp.at).getTime()) <= sinceMs;
+
+    project.categories.forEach((cat) => {
+      const st = node.status[cat.id];
+      if (isRecent(st)) lines.push(`- ${cat.name} → ${st.partial ? '◧ partial' : '✅'}`);
+    });
+    project.microVars.forEach((mv) => {
+      const st = node.micro[mv.id];
+      if (isRecent(st)) lines.push(`- ${mv.name} → ${st.partial ? '◧ partial' : '✅'}`);
+    });
+    project.reportTypes.forEach((rt) => {
+      const recent = (node.reports[rt.id] || []).filter(isRecent);
+      if (recent.length) lines.push(`- ${rt.name} ×${recent.length} → ✅`);
+    });
+    return lines;
+  }
+
+  function copyRecap(nodesToScan) {
+    const project = getActiveProject();
+    const dayMs = 24 * 3600 * 1000;
+    const blocks = [];
+    nodesToScan.filter((n) => !n.substation).forEach((node) => {
+      const lines = recapLinesForNode(node, project, dayMs);
+      if (lines.length) blocks.push([`■ FOU → ${node.label}`, ...lines].join('\n'));
+    });
+    if (!blocks.length) {
+      showToast('No completed task in the last 24h.');
+      return;
+    }
+    copyText(blocks.join('\n\n'), 'Recap copied — paste it in WhatsApp.');
+  }
+
+  function exportCsv() {
+    const project = getActiveProject();
+    const sep = ';';
+    const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const rows = [['Foundation', 'Group', 'Task', 'State', 'Date', 'By', 'Comment'].join(sep)];
+
+    project.nodes.filter((n) => !n.substation).forEach((node) => {
+      const pushRow = (group, name, stamp, comment) => {
+        const stateTxt = stamp ? (stamp.partial ? 'Partial' : 'Done') : 'Not done';
+        rows.push([
+          q(node.label), q(group), q(name), q(stateTxt),
+          q(stamp && stamp.at ? formatDate(stamp.at) : ''),
+          q(stamp && stamp.by ? stamp.by : ''),
+          q(comment || ''),
+        ].join(sep));
+      };
+      project.categories.forEach((cat) => pushRow('Main', cat.name, node.status[cat.id], node.taskComments[cat.id]));
+      project.microVars.forEach((mv) => pushRow('Secondary', mv.name, node.micro[mv.id], node.taskComments[mv.id]));
+      project.reportTypes.forEach((rt) => {
+        (node.reports[rt.id] || []).forEach((entry) => {
+          rows.push([q(node.label), q('Report'), q(rt.name), q('Occurrence'), q(formatDate(entry.at)), q(entry.by || ''), q('')].join(sep));
+        });
+      });
+      if (node.note) rows.push([q(node.label), q('Note'), q('Free note'), q(''), q(''), q(''), q(node.note)].join(sep));
+    });
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const blob = new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `treFOU_backup_${dateTag}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('CSV backup downloaded.');
+  }
+
+  // ---------- method statements ----------
+  function getProcedure(project, itemId) {
+    if (!project.procedures[itemId]) {
+      project.procedures[itemId] = { en: '', fr: '', tools: '', ppe: '' };
+    }
+    return project.procedures[itemId];
+  }
+
+  function renderProcedures() {
+    const project = getActiveProject();
+    const body = document.getElementById('proc-body');
+    body.innerHTML = '';
+    const admin = isAdmin();
+    const items = project.categories.concat(project.microVars);
+
+    document.getElementById('proc-lang').textContent = procLang === 'en' ? '🇫🇷 FR' : '🇬🇧 EN';
+
+    items.forEach((item) => {
+      const proc = getProcedure(project, item.id);
+      const details = document.createElement('details');
+      details.className = 'proc-item';
+
+      const summary = document.createElement('summary');
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = item.color;
+      summary.append(dot, document.createTextNode(` ${item.name}`));
+      details.appendChild(summary);
+
+      const sections = [
+        { key: procLang, label: procLang === 'en' ? 'Method statement (EN)' : 'Mode opératoire (FR)' },
+        { key: 'tools', label: 'Tools & consumables' },
+        { key: 'ppe', label: 'PPE & required trainings' },
+      ];
+
+      sections.forEach((section) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'proc-section';
+        const h = document.createElement('h4');
+        h.textContent = section.label;
+        wrap.appendChild(h);
+        if (admin) {
+          const ta = document.createElement('textarea');
+          ta.rows = 4;
+          ta.value = proc[section.key] || '';
+          ta.placeholder = 'To be completed…';
+          ta.addEventListener('change', () => {
+            proc[section.key] = ta.value;
+            touchAndSave();
+          });
+          wrap.appendChild(ta);
+        } else {
+          const p = document.createElement('p');
+          p.className = proc[section.key] ? 'proc-text' : 'proc-text proc-empty';
+          p.textContent = proc[section.key] || 'To be completed…';
+          wrap.appendChild(p);
+        }
+        details.appendChild(wrap);
+      });
+
+      body.appendChild(details);
+    });
   }
 
   // ---------- drawers (mobile) ----------
@@ -930,6 +1441,30 @@
 
   // ---------- static listeners ----------
   function attachStaticListeners() {
+    // login
+    document.getElementById('login-visitor').addEventListener('click', () => loginAs('Visitor', 'visitor'));
+    document.getElementById('login-cancel').addEventListener('click', () => {
+      pendingLoginName = null;
+      document.getElementById('login-password').classList.add('hidden');
+    });
+    document.getElementById('login-password-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const value = document.getElementById('login-password-input').value.trim();
+      if (pendingLoginName && value.toUpperCase() === PASSWORD) {
+        loginAs(pendingLoginName, 'tech');
+      } else {
+        document.getElementById('login-error').classList.remove('hidden');
+      }
+    });
+    document.getElementById('btn-logout').addEventListener('click', logout);
+
+    document.getElementById('btn-admin-toggle').addEventListener('click', () => {
+      if (!isAdminName()) return;
+      user.admin = !user.admin;
+      saveUser();
+      render();
+    });
+
     document.getElementById('project-select').addEventListener('change', (e) => {
       state.activeProjectId = e.target.value;
       pendingConnectFrom = null;
@@ -939,9 +1474,11 @@
     });
 
     document.getElementById('btn-new-project').addEventListener('click', () => {
-      const name = prompt('Nom du nouveau projet', 'Nouveau projet');
+      if (!isAdmin()) return;
+      const name = prompt('New project name', 'New project');
       if (name === null) return;
-      const project = createEmptyProject(name.trim() || 'Nouveau projet');
+      const project = createEmptyProject(name.trim() || 'New project');
+      project.reportTypes = defaultReportTypes();
       state.projects[project.id] = project;
       state.activeProjectId = project.id;
       saveState();
@@ -950,9 +1487,10 @@
     });
 
     document.getElementById('btn-rename-project').addEventListener('click', () => {
+      if (!isAdmin()) return;
       const project = getActiveProject();
       if (!project) return;
-      const name = prompt('Renommer le projet', project.name);
+      const name = prompt('Rename project', project.name);
       if (name === null) return;
       project.name = name.trim() || project.name;
       touchAndSave();
@@ -960,13 +1498,14 @@
     });
 
     document.getElementById('btn-delete-project').addEventListener('click', () => {
+      if (!isAdmin()) return;
       const project = getActiveProject();
       if (!project) return;
       if (Object.keys(state.projects).length <= 1) {
-        alert('Impossible de supprimer le dernier projet.');
+        alert('Cannot delete the last project.');
         return;
       }
-      if (!confirm(`Supprimer le projet "${project.name}" ? Cette action est irréversible.`)) return;
+      if (!confirm(`Delete project "${project.name}"? This cannot be undone.`)) return;
       delete state.projects[project.id];
       state.activeProjectId = Object.keys(state.projects)[0];
       saveState();
@@ -975,16 +1514,12 @@
     });
 
     document.getElementById('btn-add-category').addEventListener('click', () => {
+      if (!isAdmin()) return;
       const project = getActiveProject();
-      if (!project) return;
-      if (project.categories.length >= MAX_CATEGORIES) {
-        alert(`Maximum ${MAX_CATEGORIES} catégories principales (une part du camembert central).`);
-        return;
-      }
-      const name = prompt('Nom de la catégorie', 'Nouvelle catégorie');
+      if (!project || project.categories.length >= MAX_CATEGORIES) return;
+      const name = prompt('Category name', 'New category');
       if (name === null) return;
-      const color = microPaletteColor(project.categories.length * 2);
-      const cat = { id: uid(), name: name.trim() || 'Catégorie', color };
+      const cat = { id: uid(), name: name.trim() || 'Category', color: microPaletteColor(project.categories.length * 2) };
       project.categories.push(cat);
       project.nodes.forEach((n) => { n.status[cat.id] = null; });
       touchAndSave();
@@ -992,16 +1527,12 @@
     });
 
     document.getElementById('btn-add-micro').addEventListener('click', () => {
+      if (!isAdmin()) return;
       const project = getActiveProject();
-      if (!project) return;
-      if (project.microVars.length >= MAX_MICRO) {
-        alert(`Maximum ${MAX_MICRO} variables secondaires (anneau extérieur).`);
-        return;
-      }
-      const name = prompt('Nom de la variable', 'Nouvelle variable');
+      if (!project || project.microVars.length >= MAX_MICRO) return;
+      const name = prompt('Category name', 'New category');
       if (name === null) return;
-      const color = microPaletteColor(project.microVars.length);
-      const mv = { id: uid(), name: name.trim() || 'Variable', color };
+      const mv = { id: uid(), name: name.trim() || 'Category', color: microPaletteColor(project.microVars.length) };
       project.microVars.push(mv);
       project.nodes.forEach((n) => { n.micro[mv.id] = null; });
       touchAndSave();
@@ -1009,6 +1540,7 @@
     });
 
     document.getElementById('btn-add-node').addEventListener('click', () => {
+      if (!isAdmin()) return;
       const project = getActiveProject();
       if (!project) return;
       const world = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
@@ -1019,6 +1551,8 @@
         y: world.y,
         status: {},
         micro: {},
+        taskComments: {},
+        reports: {},
         issue: false,
         note: '',
       };
@@ -1055,12 +1589,13 @@
 
     document.getElementById('punch-form').addEventListener('submit', (e) => {
       e.preventDefault();
+      if (!canEdit()) return;
       const project = getActiveProject();
       if (!project) return;
       const input = document.getElementById('punch-input');
       const text = input.value.trim();
       if (!text) return;
-      project.punchList.unshift({ id: uid(), text, done: false });
+      project.punchList.unshift({ id: uid(), text, done: false, by: user.name, at: new Date().toISOString() });
       input.value = '';
       touchAndSave();
       renderPunchList();
@@ -1070,6 +1605,7 @@
     document.getElementById('modal-save').addEventListener('click', closeModalAndRender);
 
     document.getElementById('modal-label').addEventListener('input', (e) => {
+      if (!isAdmin()) return;
       const node = currentModalNode();
       if (!node) return;
       node.label = e.target.value;
@@ -1077,6 +1613,7 @@
     });
 
     document.getElementById('modal-issue').addEventListener('change', (e) => {
+      if (!canEdit()) { e.target.checked = !e.target.checked; return; }
       const node = currentModalNode();
       if (!node) return;
       node.issue = e.target.checked;
@@ -1084,30 +1621,56 @@
     });
 
     document.getElementById('modal-note').addEventListener('input', (e) => {
+      if (!canEdit()) return;
       const node = currentModalNode();
       if (!node) return;
       node.note = e.target.value;
       touchAndSave();
     });
 
+    document.getElementById('modal-recap').addEventListener('click', () => {
+      const node = currentModalNode();
+      if (node) copyRecap([node]);
+    });
+
     document.getElementById('modal-add-punch').addEventListener('click', () => {
+      if (!canEdit()) return;
       const node = currentModalNode();
       const project = getActiveProject();
       if (!node || !project) return;
-      const value = prompt('Texte de la punch list', `${node.label} — `);
+      const value = prompt('Punch list entry', `${node.label} — `);
       if (value === null) return;
-      project.punchList.unshift({ id: uid(), text: value, done: false });
+      project.punchList.unshift({ id: uid(), text: value, done: false, by: user.name, at: new Date().toISOString() });
       touchAndSave();
       renderPunchList();
     });
 
     document.getElementById('modal-delete').addEventListener('click', () => {
-      if (!openNodeId) return;
-      if (!confirm('Supprimer ce point et ses liaisons ?')) return;
+      if (!isAdmin() || !openNodeId) return;
+      if (!confirm('Delete this point and its cables?')) return;
       const idToDelete = openNodeId;
       document.getElementById('node-modal').classList.add('hidden');
       openNodeId = null;
       deleteNode(idToDelete);
+    });
+
+    document.getElementById('btn-recap-all').addEventListener('click', () => {
+      const project = getActiveProject();
+      if (project) copyRecap(project.nodes);
+    });
+
+    document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
+
+    document.getElementById('btn-procedures').addEventListener('click', () => {
+      renderProcedures();
+      document.getElementById('proc-modal').classList.remove('hidden');
+    });
+    document.getElementById('proc-close').addEventListener('click', () => {
+      document.getElementById('proc-modal').classList.add('hidden');
+    });
+    document.getElementById('proc-lang').addEventListener('click', () => {
+      procLang = procLang === 'en' ? 'fr' : 'en';
+      renderProcedures();
     });
 
     document.getElementById('btn-export').addEventListener('click', () => {
@@ -1123,6 +1686,7 @@
     });
 
     document.getElementById('btn-import').addEventListener('click', () => {
+      if (!isAdmin()) return;
       document.getElementById('file-import').click();
     });
 
@@ -1134,32 +1698,19 @@
         try {
           const imported = JSON.parse(reader.result);
           if (!imported || !Array.isArray(imported.categories) || !Array.isArray(imported.nodes)) {
-            throw new Error('format de projet invalide');
+            throw new Error('invalid project format');
           }
           imported.id = uid();
-          imported.name = imported.name ? `${imported.name} (importé)` : 'Projet importé';
+          imported.name = imported.name ? `${imported.name} (imported)` : 'Imported project';
           imported.updatedAt = new Date().toISOString();
-          imported.connections = imported.connections || [];
-          imported.punchList = imported.punchList || [];
-          imported.microVars = imported.microVars || [];
-          imported.nodes.forEach((n) => {
-            n.micro = n.micro || {};
-            n.status = n.status || {};
-            // older exports stored plain booleans; convert to stamp objects
-            [n.status, n.micro].forEach((map) => {
-              Object.keys(map).forEach((k) => {
-                if (map[k] === true) map[k] = { at: null, by: null };
-                else if (map[k] === false) map[k] = null;
-              });
-            });
-          });
+          normalizeProject(imported);
           state.projects[imported.id] = imported;
           state.activeProjectId = imported.id;
           saveState();
           render();
           safeFitToContent();
         } catch (err) {
-          alert(`Fichier invalide : ${err.message}`);
+          alert(`Invalid file: ${err.message}`);
         }
       };
       reader.readAsText(file);
@@ -1168,7 +1719,9 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (!document.getElementById('node-modal').classList.contains('hidden')) {
+      if (!document.getElementById('proc-modal').classList.contains('hidden')) {
+        document.getElementById('proc-modal').classList.add('hidden');
+      } else if (!document.getElementById('node-modal').classList.contains('hidden')) {
         closeModalAndRender();
       } else if (document.getElementById('panel-left').classList.contains('open')
         || document.getElementById('panel-right').classList.contains('open')) {
@@ -1182,9 +1735,9 @@
 
   function updateCanvasHint() {
     const hints = {
-      select: 'Touchez une part ou une cellule pour cocher/décocher. Centre = détails. Glissez pour naviguer.',
-      connect: 'Touchez un premier point puis un second pour créer une liaison.',
-      delete: 'Touchez un point ou une liaison pour la supprimer.',
+      select: 'Tap a slice or ring cell to check it. Centre = details. Drag to navigate.',
+      connect: 'Tap a first point then a second one to add a cable.',
+      delete: 'Tap a point or a cable to delete it.',
     };
     document.getElementById('canvas-hint').textContent = hints[mode] || '';
   }
@@ -1193,12 +1746,16 @@
   function init() {
     state = loadState();
     saveState();
+    user = loadUser();
     svgEl = document.getElementById('canvas');
+    renderLogin();
     attachStaticListeners();
     setupCameraGestures();
     updateCanvasHint();
+    applyPermissionClasses();
     render();
     safeFitToContent();
+    if (!user) showLogin();
   }
 
   init();
