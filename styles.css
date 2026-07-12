@@ -175,6 +175,7 @@ select {
   .updated-at { display: inline; }
 }
 
+
 .hint { color: var(--text-muted); font-size: 12px; line-height: 1.4; margin: 4px 0 10px; }
 .count-badge {
   background: var(--bg); border: 1px solid var(--line); border-radius: 999px;
@@ -257,17 +258,16 @@ select {
   stroke-width: 3px;
   stroke-linejoin: round;
 }
-.node-wedge { cursor: pointer; stroke: var(--text); stroke-width: 1.75; stroke-opacity: 0.7; }
+.node-wedge { cursor: pointer; stroke: #000; stroke-width: 1.6; }
 .node-hub { cursor: pointer; }
-.node-hub-ring { fill: var(--panel); stroke: var(--text); stroke-opacity: 0.7; stroke-width: 1.5; }
-.node-ring-cell { cursor: pointer; stroke: var(--text); stroke-opacity: 0.7; stroke-width: 1.5; }
+.node-hub-ring { fill: var(--panel); stroke: #000; stroke-width: 1.4; }
+.node-ring-cell { cursor: pointer; stroke: #000; stroke-width: 1.6; }
 .node-issue-x { fill: var(--danger); font-weight: 700; pointer-events: none; user-select: none; }
 .connection-line { stroke: #64748b; stroke-width: 1.75; fill: none; cursor: pointer; opacity: 0.8; }
 .connection-line.deletable:hover { stroke: var(--danger); stroke-width: 4; }
 .node-group.selected .node-hub-ring { stroke: var(--accent); stroke-width: 2.5; }
-.substation-marker { fill: #0f172a; stroke: var(--text); stroke-opacity: 0.6; stroke-width: 1.5; cursor: pointer; }
-.substation-icon { font-size: 26px; fill: #fbbf24; pointer-events: none; }
-.substation-label { font-weight: 700; }
+.substation-marker { fill: var(--panel); stroke: var(--text-muted); stroke-width: 1.5; cursor: pointer; }
+.substation-label { font-size: 13px; font-weight: 600; fill: var(--text-muted); pointer-events: none; user-select: none; }
 
 .progress-overall { margin-bottom: 12px; }
 .progress-row { margin-bottom: 10px; }
@@ -308,5 +308,17 @@ select {
 .checkbox-field { flex-direction: row; align-items: center; }
 .modal-category-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .modal-micro-list { max-height: 220px; overflow-y: auto; }
-.modal-category-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.modal-category-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); flex-wrap: wrap; }
 .modal-category-row .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.modal-category-name { flex: 1; min-width: 0; }
+.check-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; margin-left: auto; }
+.modal-check-all { display: flex; justify-content: flex-end; }
+.modal-check-all .btn { padding: 3px 10px; font-size: 12px; }
+
+/* phone & tablet: strip the editing chrome, keep the map full-focus
+   (pinch = zoom, drag = pan, tap = check) */
+@media (max-width: 900px) {
+  .toolbar,
+  #btn-rename-project,
+  #btn-delete-project { display: none; }
+}
