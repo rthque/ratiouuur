@@ -2,7 +2,7 @@ name: Deploy static site to GitHub Pages
 
 on:
   push:
-    branches: [master, claude/work-progress-tracker-l8bu9k]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
