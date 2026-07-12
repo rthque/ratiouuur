@@ -1,14 +1,14 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'worksite-tracker:v2';
+  const STORAGE_KEY = 'worksite-tracker:v3';
   const SVGNS = 'http://www.w3.org/2000/svg';
 
-  const NODE_R = 15;       // inner pie radius (8 main categories)
-  const HUB_R = 5;         // center hub (drag handle / open details)
-  const RING_R = 24;       // outer ring radius (16 secondary variables)
-  const DOT_R = 3.2;       // outer dot radius
-  const GRID_UNIT = 95;    // world-space spacing between adjacent grid cells
+  const NODE_R = 24;       // inner pie radius (8 main categories)
+  const HUB_R = 7;         // center hub (drag handle / open details)
+  const RING_R = 34;       // outer ring radius (16 secondary variables)
+  const DOT_R = 4.2;       // outer dot radius
+  const GRID_UNIT = 120;   // world-space spacing between adjacent grid cells
 
   const MAX_CATEGORIES = 8;
   const MAX_MICRO = 16;
@@ -132,14 +132,47 @@
       });
     });
 
-    // simple placeholder cable strings: chain nodes within each column
+    // inter-array cable strings: chain nodes within each column (as drawn on the poster)
     COLS.forEach((col) => {
       const rows = (COLUMN_ROWS[col] || []).slice().sort((a, b) => a - b);
       for (let i = 0; i < rows.length - 1; i++) {
         const a = project.nodes.find((n) => n.label === `${col}${rows[i]}`);
         const b = project.nodes.find((n) => n.label === `${col}${rows[i + 1]}`);
-        if (a && b) project.connections.push({ id: uid(), a: a.id, b: b.id });
+        if (a && b) project.connections.push({ id: uid(), a: a.id, b: b.id, kind: 'array' });
       }
+    });
+
+    // offshore substation (OSS) — sits near K4/L4 on the poster, not one of the 62 foundations
+    const kRef = project.nodes.find((n) => n.label === 'K4');
+    const lRef = project.nodes.find((n) => n.label === 'L4');
+    const ossPos = (kRef && lRef)
+      ? { x: (kRef.x + lRef.x) / 2 + GRID_UNIT * 0.4, y: (kRef.y + lRef.y) / 2 }
+      : { x: 0, y: 0 };
+    const oss = {
+      id: uid(),
+      label: 'OSS',
+      x: ossPos.x,
+      y: ossPos.y,
+      status: {},
+      micro: {},
+      issue: false,
+      note: 'Sous-station électrique (offshore substation)',
+      substation: true,
+    };
+    project.nodes.push(oss);
+
+    // export/hub cables: link the substation to the nearest foundation of each string
+    COLS.forEach((col) => {
+      const rows = (COLUMN_ROWS[col] || []).slice().sort((a, b) => a - b);
+      let nearest = null;
+      let nearestDist = Infinity;
+      rows.forEach((row) => {
+        const node = project.nodes.find((n) => n.label === `${col}${row}`);
+        if (!node) return;
+        const d = Math.hypot(node.x - oss.x, node.y - oss.y);
+        if (d < nearestDist) { nearestDist = d; nearest = node; }
+      });
+      if (nearest) project.connections.push({ id: uid(), a: oss.id, b: nearest.id, kind: 'export' });
     });
 
     return project;
@@ -594,7 +627,7 @@
       line.setAttribute('data-conn-id', conn.id);
       line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
       line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-      line.setAttribute('class', `connection-line${mode === 'delete' ? ' deletable' : ''}`);
+      line.setAttribute('class', `connection-line${conn.kind === 'export' ? ' connection-line--export' : ''}${mode === 'delete' ? ' deletable' : ''}`);
       line.addEventListener('click', (e) => {
         e.stopPropagation();
         if (mode === 'delete') deleteConnection(conn.id);
@@ -607,6 +640,40 @@
       g.setAttribute('class', `node-group${pendingConnectFrom === node.id ? ' selected' : ''}`);
       g.setAttribute('data-node-id', node.id);
       g.setAttribute('transform', `translate(${node.x},${node.y})`);
+
+      if (node.substation) {
+        const size = NODE_R * 2.7;
+        const rect = document.createElementNS(SVGNS, 'rect');
+        rect.setAttribute('x', String(-size / 2));
+        rect.setAttribute('y', String(-size / 2));
+        rect.setAttribute('width', String(size));
+        rect.setAttribute('height', String(size));
+        rect.setAttribute('rx', '7');
+        rect.setAttribute('class', 'substation-marker');
+        rect.setAttribute('data-kind', 'hub');
+        g.appendChild(rect);
+
+        const bolt = document.createElementNS(SVGNS, 'text');
+        bolt.setAttribute('x', '0');
+        bolt.setAttribute('y', '6');
+        bolt.setAttribute('text-anchor', 'middle');
+        bolt.setAttribute('class', 'substation-icon');
+        bolt.style.pointerEvents = 'none';
+        bolt.textContent = '⚡';
+        g.appendChild(bolt);
+
+        const ossLabel = document.createElementNS(SVGNS, 'text');
+        ossLabel.setAttribute('x', '0');
+        ossLabel.setAttribute('y', String(size / 2 + 16));
+        ossLabel.setAttribute('text-anchor', 'middle');
+        ossLabel.setAttribute('class', 'node-label substation-label');
+        ossLabel.textContent = node.label;
+        g.appendChild(ossLabel);
+
+        attachNodeHandlers(g, node);
+        svgEl.appendChild(g);
+        return;
+      }
 
       if (catCount === 0) {
         const circle = document.createElementNS(SVGNS, 'circle');
@@ -698,7 +765,8 @@
     overallEl.innerHTML = '';
     listEl.innerHTML = '';
     if (!project) return;
-    const nodeCount = project.nodes.length;
+    const foundationNodes = project.nodes.filter((n) => !n.substation);
+    const nodeCount = foundationNodes.length;
     let totalDone = 0;
     let totalSlots = 0;
 
@@ -710,7 +778,7 @@
       header.innerHTML = `<strong>${escapeHtml(title)}</strong>`;
       listEl.appendChild(header);
       items.forEach((item) => {
-        const done = project.nodes.filter((n) => n[statusKey][item.id]).length;
+        const done = foundationNodes.filter((n) => n[statusKey][item.id]).length;
         totalDone += done;
         totalSlots += nodeCount;
         const pct = nodeCount ? Math.round((done / nodeCount) * 100) : 0;
@@ -813,9 +881,17 @@
     document.getElementById('modal-label').value = node.label;
     document.getElementById('modal-issue').checked = !!node.issue;
     document.getElementById('modal-note').value = node.note || '';
+    document.getElementById('modal-title').textContent = node.substation ? 'Détails de la sous-station' : 'Détails de la fondation';
 
-    renderModalChecklist(document.getElementById('modal-categories'), project.categories, node, 'status');
-    renderModalChecklist(document.getElementById('modal-micro'), project.microVars, node, 'micro');
+    const catListEl = document.getElementById('modal-categories');
+    const microListEl = document.getElementById('modal-micro');
+    if (node.substation) {
+      catListEl.innerHTML = '<li class="hint">Non applicable à la sous-station.</li>';
+      microListEl.innerHTML = '';
+    } else {
+      renderModalChecklist(catListEl, project.categories, node, 'status');
+      renderModalChecklist(microListEl, project.microVars, node, 'micro');
+    }
 
     document.getElementById('node-modal').classList.remove('hidden');
   }
