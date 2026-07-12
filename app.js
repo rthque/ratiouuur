@@ -1,21 +1,21 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'worksite-tracker:v5';
+  const STORAGE_KEY = 'worksite-tracker:v6';
   const SVGNS = 'http://www.w3.org/2000/svg';
 
-  const NODE_R = 24;       // inner pie radius (8 main categories)
-  const HUB_R = 7;         // center hub (open details)
-  const RING_IN = 26;      // second ring (16 secondary variables), inner radius
-  const RING_OUT = 36;     // second ring, outer radius
-  const GRID_UNIT = 120;   // world-space spacing between adjacent grid cells
+  const NODE_R = 30;       // inner pie radius (8 main categories)
+  const HUB_R = 8;         // center hub (open details)
+  const RING_IN = 33;      // second ring (16 secondary categories), inner radius
+  const RING_OUT = 46;     // second ring, outer radius
+  const GRID_UNIT = 140;   // world-space spacing between adjacent grid cells
 
   const MAX_CATEGORIES = 8;
   const MAX_MICRO = 16;
 
-  // Grid reconstructed from the paper punch-list poster (letter column A–M, no I,
-  // numeric row 1–7). This is a best-effort reading of the photo — positions and
-  // labels can be corrected afterwards by dragging / renaming any point.
+  // Foundation grid (letter column A–M, no I, numeric row 1–7), validated
+  // against the reference cable map: K03 does not exist; K01 does (cable
+  // WT154 L1-K1). Labels are zero-padded (A02, K01…).
   const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M'];
   const COLUMN_ROWS = {
     A: [2, 3, 4],
@@ -27,10 +27,14 @@
     G: [1, 2, 4, 5, 6, 7],
     H: [1, 2, 4, 5, 6, 7],
     J: [1, 2, 4, 5, 6, 7],
-    K: [3, 4, 5, 6, 7],
+    K: [1, 4, 5, 6, 7],
     L: [1, 2, 4, 5, 6, 7],
     M: [1, 2, 3, 4, 5, 6, 7],
   };
+
+  function fouLabel(col, row) {
+    return `${col}0${row}`;
+  }
 
   // Inter-array cable strings, read segment by segment off the reference site
   // map ("Dieppe Le Tréport"): each cable there is labelled with its endpoint
@@ -39,22 +43,22 @@
   // of every string. 8 strings radiate from the OSS (which sits on the empty
   // L3 grid slot).
   const STRING_EDGES = [
-    // String rangée 7 : OSS→K7→J7→…→D7 (WT31-37)
-    ['OSS', 'K7'], ['K7', 'J7'], ['J7', 'H7'], ['H7', 'G7'], ['G7', 'F7'], ['F7', 'E7'], ['E7', 'D7'],
-    // String rangée 6, feeder en K5 (WT41-48)
-    ['OSS', 'K5'], ['K5', 'K6'], ['K6', 'J6'], ['J6', 'H6'], ['H6', 'G6'], ['G6', 'F6'], ['F6', 'E6'], ['E6', 'D6'],
-    // String rangée 5, feeder en K4 via J4 (WT11-18)
-    ['OSS', 'K4'], ['K4', 'J4'], ['J4', 'J5'], ['J5', 'H5'], ['H5', 'G5'], ['G5', 'F5'], ['F5', 'E5'], ['E5', 'D5'],
+    // String rangée 7 : OSS→K07→J07→…→D07 (WT31-37)
+    ['OSS', 'K07'], ['K07', 'J07'], ['J07', 'H07'], ['H07', 'G07'], ['G07', 'F07'], ['F07', 'E07'], ['E07', 'D07'],
+    // String rangée 6, feeder en K05 (WT41-48)
+    ['OSS', 'K05'], ['K05', 'K06'], ['K06', 'J06'], ['J06', 'H06'], ['H06', 'G06'], ['G06', 'F06'], ['F06', 'E06'], ['E06', 'D06'],
+    // String rangée 5, feeder en K04 via J04 (WT11-18)
+    ['OSS', 'K04'], ['K04', 'J04'], ['J04', 'J05'], ['J05', 'H05'], ['H05', 'G05'], ['G05', 'F05'], ['F05', 'E05'], ['E05', 'D05'],
     // String rangée 4 puis colonne A (WT61-68)
-    ['OSS', 'G4'], ['G4', 'E4'], ['E4', 'D4'], ['D4', 'C4'], ['C4', 'B4'], ['B4', 'A4'], ['A4', 'A3'], ['A3', 'A2'],
-    // String H4 → rangée 3, avec antennes C2 et E2 (WT71-78)
-    ['OSS', 'H4'], ['H4', 'E3'], ['E3', 'D3'], ['D3', 'C3'], ['C3', 'B3'], ['B3', 'B2'], ['C3', 'C2'], ['E3', 'E2'],
-    // String sud : J1 puis rangées 1 et 2 (WT81-88)
-    ['OSS', 'J1'], ['J1', 'J2'], ['J1', 'H1'], ['H1', 'H2'], ['H2', 'G2'], ['G2', 'F2'], ['H1', 'G1'], ['G1', 'F1'], ['F1', 'E1'],
-    // String L4→L7 en peigne avec les antennes M4→M7 (WT121-128)
-    ['OSS', 'L4'], ['L4', 'L5'], ['L5', 'L6'], ['L6', 'L7'], ['L7', 'M7'], ['L4', 'M4'], ['L5', 'M5'], ['L6', 'M6'],
-    // String cluster sud-est : K3, L2, L1, M1-M3 (WT151-157)
-    ['OSS', 'K3'], ['K3', 'L2'], ['L2', 'L1'], ['L1', 'M1'], ['L2', 'M2'], ['M2', 'M3'],
+    ['OSS', 'G04'], ['G04', 'E04'], ['E04', 'D04'], ['D04', 'C04'], ['C04', 'B04'], ['B04', 'A04'], ['A04', 'A03'], ['A03', 'A02'],
+    // String H04 → rangée 3, avec antennes C02 et E02 (WT71-78)
+    ['OSS', 'H04'], ['H04', 'E03'], ['E03', 'D03'], ['D03', 'C03'], ['C03', 'B03'], ['B03', 'B02'], ['C03', 'C02'], ['E03', 'E02'],
+    // String sud : J01 puis rangées 1 et 2 (WT81-88)
+    ['OSS', 'J01'], ['J01', 'J02'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['H01', 'G01'], ['G01', 'F01'], ['F01', 'E01'],
+    // String L04→L07 en peigne avec les antennes M04→M07 (WT121-128)
+    ['OSS', 'L04'], ['L04', 'L05'], ['L05', 'L06'], ['L06', 'L07'], ['L07', 'M07'], ['L04', 'M04'], ['L05', 'M05'], ['L06', 'M06'],
+    // String cluster sud-est : L02, L01, K01, M01-M03 (WT151-157, dont WT154 L1-K1)
+    ['OSS', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L01', 'M01'], ['L02', 'M02'], ['M02', 'M03'],
   ];
 
   let state = null;
@@ -86,6 +90,19 @@
 
   function polar(radius, angle) {
     return { x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
+  }
+
+  // A checked task is stored as { at: ISO date, by: name|null } (null = unchecked),
+  // so the details panel can show when (and later by whom) it was validated.
+  function checkStamp() {
+    return { at: new Date().toISOString(), by: null };
+  }
+
+  function formatStamp(stamp) {
+    if (!stamp || !stamp.at) return '';
+    const d = new Date(stamp.at);
+    const datePart = `${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    return stamp.by ? `${datePart} — ${stamp.by}` : datePart;
   }
 
   function ringSegmentPath(rIn, rOut, a0, a1) {
@@ -122,34 +139,30 @@
   }
 
   function seedWindFarmProject() {
-    const project = createEmptyProject('Parc éolien — 62 fondations');
+    const project = createEmptyProject('Dieppe Le Tréport — 62 FOU');
 
     const catDefs = [
-      { name: 'Cable Cleats', color: '#111827' },
-      { name: 'PIM Gate', color: '#2563eb' },
-      { name: 'Scotch Kote', color: '#db2777' },
-      { name: 'Gearing Repair', color: '#16a34a' },
-      { name: 'Boulonnage', color: '#f59e0b' },
-      { name: 'Peinture / Revêtement', color: '#7c3aed' },
-      { name: 'Anodes sacrificielles', color: '#0891b2' },
-      { name: 'Éclairage', color: '#dc2626' },
+      { name: 'Tower cabinet rust treatment & rubber placement', color: '#111827' },
+      { name: 'ScotchKoat on earthing cable', color: '#db2777' },
+      { name: 'Grating repair with G8 resin', color: '#16a34a' },
+      { name: 'Installed cable tray brackets', color: '#2563eb' },
     ];
     project.categories = catDefs.map((c) => ({ id: uid(), ...c }));
 
-    const microNames = [
-      'Échelle', 'Plaque signalétique', 'Caillebotis', 'Fixation cable tray',
-      'Portillon', 'Boulon manquant', 'Anode', 'Retouche peinture',
-      'Éclairage niveau', 'J-tube', 'Ancrage', 'Garde-corps',
-      'Capuchons boulons', 'Mise à la terre', 'Marquage', 'Photo inspection',
+    const microDefs = [
+      { name: 'Safety pin gate', color: '#f59e0b' },
+      { name: 'Hang off platform: caution sign', color: '#7c3aed' },
+      { name: 'Pick up keys', color: '#0891b2' },
+      { name: 'Water ingress check', color: '#dc2626' },
     ];
-    project.microVars = microNames.map((name, i) => ({ id: uid(), name, color: microPaletteColor(i) }));
+    project.microVars = microDefs.map((c) => ({ id: uid(), ...c }));
 
     COLS.forEach((col, colIndex) => {
       (COLUMN_ROWS[col] || []).forEach((row) => {
         const pos = gridToWorld(colIndex, row);
         const node = {
           id: uid(),
-          label: `${col}${row}`,
+          label: fouLabel(col, row),
           x: pos.x,
           y: pos.y,
           status: {},
@@ -157,8 +170,8 @@
           issue: false,
           note: '',
         };
-        project.categories.forEach((cat) => { node.status[cat.id] = false; });
-        project.microVars.forEach((mv) => { node.micro[mv.id] = false; });
+        project.categories.forEach((cat) => { node.status[cat.id] = null; });
+        project.microVars.forEach((mv) => { node.micro[mv.id] = null; });
         project.nodes.push(node);
       });
     });
@@ -442,13 +455,13 @@
       openNodeModal(node.id);
     } else if (kind.startsWith('wedge-')) {
       const catId = kind.slice(6);
-      node.status[catId] = !node.status[catId];
+      node.status[catId] = node.status[catId] ? null : checkStamp();
       touchAndSave();
       renderCanvas();
       renderProgress();
     } else if (kind.startsWith('micro-')) {
       const varId = kind.slice(6);
-      node.micro[varId] = !node.micro[varId];
+      node.micro[varId] = node.micro[varId] ? null : checkStamp();
       touchAndSave();
       renderCanvas();
       renderProgress();
@@ -616,31 +629,23 @@
       g.setAttribute('transform', `translate(${node.x},${node.y})`);
 
       if (node.substation) {
-        const size = NODE_R * 2.7;
+        // discreet marker: small outlined square with the OSS label inside
+        const size = NODE_R * 1.5;
         const rect = document.createElementNS(SVGNS, 'rect');
         rect.setAttribute('x', String(-size / 2));
         rect.setAttribute('y', String(-size / 2));
         rect.setAttribute('width', String(size));
         rect.setAttribute('height', String(size));
-        rect.setAttribute('rx', '7');
+        rect.setAttribute('rx', '5');
         rect.setAttribute('class', 'substation-marker');
         rect.setAttribute('data-kind', 'hub');
         g.appendChild(rect);
 
-        const bolt = document.createElementNS(SVGNS, 'text');
-        bolt.setAttribute('x', '0');
-        bolt.setAttribute('y', '6');
-        bolt.setAttribute('text-anchor', 'middle');
-        bolt.setAttribute('class', 'substation-icon');
-        bolt.style.pointerEvents = 'none';
-        bolt.textContent = '⚡';
-        g.appendChild(bolt);
-
         const ossLabel = document.createElementNS(SVGNS, 'text');
         ossLabel.setAttribute('x', '0');
-        ossLabel.setAttribute('y', String(size / 2 + 16));
+        ossLabel.setAttribute('y', '4');
         ossLabel.setAttribute('text-anchor', 'middle');
-        ossLabel.setAttribute('class', 'node-label substation-label');
+        ossLabel.setAttribute('class', 'substation-label');
         ossLabel.textContent = node.label;
         g.appendChild(ossLabel);
 
@@ -676,14 +681,6 @@
           g.appendChild(path);
         });
       }
-
-      const innerOutline = document.createElementNS(SVGNS, 'circle');
-      innerOutline.setAttribute('r', String(NODE_R));
-      innerOutline.setAttribute('fill', 'none');
-      innerOutline.setAttribute('stroke', 'var(--line)');
-      innerOutline.setAttribute('stroke-width', '1');
-      innerOutline.style.pointerEvents = 'none';
-      g.appendChild(innerOutline);
 
       if (microCount > 0) {
         // second ring: one annular cell per secondary variable, with the same
@@ -769,7 +766,7 @@
     }
 
     addGroup('Catégories principales', project.categories, 'status');
-    addGroup('Variables secondaires', project.microVars, 'micro');
+    addGroup('Catégories secondaires', project.microVars, 'micro');
 
     const overallPct = totalSlots ? Math.round((totalDone / totalSlots) * 100) : 0;
     overallEl.innerHTML = `
@@ -822,6 +819,31 @@
 
   function renderModalChecklist(listEl, items, node, statusKey) {
     listEl.innerHTML = '';
+
+    if (items.length > 1) {
+      const li = document.createElement('li');
+      li.className = 'modal-check-all';
+      const allDone = items.every((item) => !!node[statusKey][item.id]);
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost';
+      btn.textContent = allDone ? 'Tout décocher' : 'Tout cocher';
+      btn.addEventListener('click', () => {
+        items.forEach((item) => {
+          if (allDone) {
+            node[statusKey][item.id] = null;
+          } else if (!node[statusKey][item.id]) {
+            node[statusKey][item.id] = checkStamp();
+          }
+        });
+        touchAndSave();
+        renderCanvas();
+        renderProgress();
+        renderModalChecklist(listEl, items, node, statusKey);
+      });
+      li.appendChild(btn);
+      listEl.appendChild(li);
+    }
+
     items.forEach((item) => {
       const li = document.createElement('li');
       li.className = 'modal-category-row';
@@ -830,10 +852,11 @@
       cb.type = 'checkbox';
       cb.checked = !!node[statusKey][item.id];
       cb.addEventListener('change', () => {
-        node[statusKey][item.id] = cb.checked;
+        node[statusKey][item.id] = cb.checked ? checkStamp() : null;
         touchAndSave();
         renderCanvas();
         renderProgress();
+        renderModalChecklist(listEl, items, node, statusKey);
       });
 
       const dot = document.createElement('span');
@@ -842,8 +865,18 @@
 
       const label = document.createElement('span');
       label.textContent = item.name;
+      label.className = 'modal-category-name';
 
       li.append(cb, dot, label);
+
+      const stampText = formatStamp(node[statusKey][item.id]);
+      if (stampText) {
+        const meta = document.createElement('span');
+        meta.className = 'check-meta';
+        meta.textContent = stampText;
+        li.appendChild(meta);
+      }
+
       listEl.appendChild(li);
     });
   }
@@ -953,7 +986,7 @@
       const color = microPaletteColor(project.categories.length * 2);
       const cat = { id: uid(), name: name.trim() || 'Catégorie', color };
       project.categories.push(cat);
-      project.nodes.forEach((n) => { n.status[cat.id] = false; });
+      project.nodes.forEach((n) => { n.status[cat.id] = null; });
       touchAndSave();
       render();
     });
@@ -970,7 +1003,7 @@
       const color = microPaletteColor(project.microVars.length);
       const mv = { id: uid(), name: name.trim() || 'Variable', color };
       project.microVars.push(mv);
-      project.nodes.forEach((n) => { n.micro[mv.id] = false; });
+      project.nodes.forEach((n) => { n.micro[mv.id] = null; });
       touchAndSave();
       render();
     });
@@ -989,8 +1022,8 @@
         issue: false,
         note: '',
       };
-      project.categories.forEach((cat) => { node.status[cat.id] = false; });
-      project.microVars.forEach((mv) => { node.micro[mv.id] = false; });
+      project.categories.forEach((cat) => { node.status[cat.id] = null; });
+      project.microVars.forEach((mv) => { node.micro[mv.id] = null; });
       project.nodes.push(node);
       touchAndSave();
       render();
@@ -1109,7 +1142,17 @@
           imported.connections = imported.connections || [];
           imported.punchList = imported.punchList || [];
           imported.microVars = imported.microVars || [];
-          imported.nodes.forEach((n) => { n.micro = n.micro || {}; });
+          imported.nodes.forEach((n) => {
+            n.micro = n.micro || {};
+            n.status = n.status || {};
+            // older exports stored plain booleans; convert to stamp objects
+            [n.status, n.micro].forEach((map) => {
+              Object.keys(map).forEach((k) => {
+                if (map[k] === true) map[k] = { at: null, by: null };
+                else if (map[k] === false) map[k] = null;
+              });
+            });
+          });
           state.projects[imported.id] = imported;
           state.activeProjectId = imported.id;
           saveState();
@@ -1149,6 +1192,7 @@
   // ---------- init ----------
   function init() {
     state = loadState();
+    saveState();
     svgEl = document.getElementById('canvas');
     attachStaticListeners();
     setupCameraGestures();
