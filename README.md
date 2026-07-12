@@ -1,32 +1,25 @@
-# Suivi de Chantier — Punch List Numérique
+# treFOU — BOP works tracker
 
-Outil web (100% statique, sans backend) pour suivre l'avancement de travaux, inspiré des affiches papier de punch list utilisées sur chantier (câblage inter-array, hookup charts, etc.).
+Static web app (no backend) to track BOP works progress across the 62 foundations of the Dieppe Le Tréport wind farm, inspired by the paper punch-list poster used on site.
 
-## Concept
+## Features
 
-- **62 fondations** : le projet par défaut ("Parc éolien — 62 fondations") reconstruit la grille lettre (A–M, sans I) / rang (1–7) du plan de référence, en conservant la même orientation. Les câbles inter-array suivent le plan de câblage réel (strings radiant depuis la sous-station). Les positions sont figées : rien ne se déplace à la souris ou au doigt, seuls la navigation (pan/zoom) et le pointage sont possibles.
-- **Catégories principales (8 max)** : le camembert au centre de chaque fondation, une part par catégorie (ex: *Cable Cleats*, *PIM Gate*, *Scotch Kote*, *Gearing Repair*…), chacune avec sa couleur.
-- **Variables secondaires (16 max)** : deuxième couronne de cellules autour du camembert central, pour suivre des tâches précises (boulons, échelle, anodes, etc.), indépendamment des catégories principales.
-- **Zoom & déplacement fluides** : pincer pour zoomer (tactile), molette (souris), boutons +/− et "vue d'ensemble" ; glisser pour déplacer la vue. Optimisé pour consulter les 62 fondations d'un coup d'œil sur mobile, puis zoomer sur un secteur précis.
-- **Liaisons** : reliez les points entre eux (mode "Relier") pour représenter un tracé de câble ou un cheminement.
-- **Points bloquants** : marquez un point d'une croix ✕ (comme les marqueurs rouges sur l'affiche) avec une note associée.
-- **Punch List** : liste de tâches restantes à cocher, équivalente aux annotations manuscrites sur le côté de l'affiche.
-- **Avancement** : barres de progression calculées automatiquement par catégorie, par variable secondaire et au global.
-- **Projets multiples** : plusieurs chantiers/plans peuvent être gérés séparément.
-- **Mobile-first** : sur petit écran, les catégories et le suivi/punch-list se rangent dans des tiroirs (☰ / 📋) pour laisser toute la place à la carte.
+- **62 foundations** laid out exactly like the reference cable map (letter A–M / row 1–7 grid, zero-padded labels, K01 included, no K03), with the real inter-array cable strings radiating from the OSS. Positions are fixed: drag = pan, pinch = zoom, tap = interact.
+- **Main categories (up to 8)** — slices of the central pie of each foundation.
+- **Secondary categories (up to 16)** — cells of the outer ring.
+- **Task states** — not done / **partially done (hatched fill)** / done. Every check is timestamped and attributed to the logged-in technician.
+- **Task comments** — a 💬 note per task per foundation, plus a free note per foundation.
+- **Reports (repeatable)** — 8 repeatable report types per foundation (Survey In/OUT, ferry daily check, Aconex 100% control, SRL load indicator, guano & smells, boatlanding SharePoint tracking, cable cleats, punch) counted with their dates and authors.
+- **Login screen** — technicians pick their name (password `BOP`); a **Visitor** mode gives full read-only access. The name of whoever validates a task is shown in grey next to it.
+- **Admin mode** — Antonin, Yohan, Etienne and Quentin can enable admin mode (bottom of the left panel) to edit/add/move/delete categories, edit method statements, and manage projects. Everyone else is read-only for configuration.
+- **Method statements** — 📖 menu with, per task: method statement (EN by default, 🇫🇷 toggle), tools & consumables, PPE & required trainings. Editable in admin mode.
+- **24h recap for WhatsApp** — one click copies a `■ FOU → X07` formatted summary of everything done in the last 24 hours (per foundation or farm-wide), ready to paste in the tracking channel.
+- **CSV backup** — one click downloads a full Excel-compatible export (every task, state, date, author, comment, report occurrence). Note: automatic daily e-mails are not possible from a fully static site; use the CSV/JSON export buttons (a scheduled backup service can be added later if a backend becomes available).
+- **Punch list** and per-category **progress bars**.
+- Mobile-first: on phone/tablet the editing chrome disappears, the map takes the full screen.
 
-Les données sont sauvegardées automatiquement dans le navigateur (`localStorage`). Utilisez **Exporter/Importer** pour sauvegarder un projet en JSON ou le transférer entre appareils.
+Data is stored in the browser (`localStorage`). Use **Export/Import** to move a project between devices.
 
-## Utilisation
+## Hosting
 
-Aucune installation requise : ouvrez `index.html` dans un navigateur, ou hébergez le dossier tel quel sur n'importe quel serveur statique.
-
-### Hébergement via GitHub Pages
-
-Un workflow GitHub Actions (`.github/workflows/deploy.yml`) déploie automatiquement le site sur GitHub Pages à chaque push sur `master`. Pour l'activer : **Settings → Pages → Source: GitHub Actions** sur le dépôt.
-
-## Structure
-
-- `index.html` — structure de la page
-- `styles.css` — styles (clair/sombre automatique)
-- `app.js` — logique de l'application (aucune dépendance externe)
+`index.html` + `styles.css` + `app.js`, no dependencies. A GitHub Actions workflow deploys to GitHub Pages on every push to `master`.
