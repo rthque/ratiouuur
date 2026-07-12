@@ -4,9 +4,9 @@ Outil web (100% statique, sans backend) pour suivre l'avancement de travaux, ins
 
 ## Concept
 
-- **62 fondations** : le projet par défaut ("Parc éolien — 62 fondations") reconstruit la grille lettre (A–M, sans I) / rang (1–7) visible sur l'affiche papier, en conservant la même orientation. C'est une reconstruction au mieux depuis la photo d'affiche manuscrite — les positions et labels se corrigent facilement (glisser-déposer, renommer dans les détails du point).
+- **62 fondations** : le projet par défaut ("Parc éolien — 62 fondations") reconstruit la grille lettre (A–M, sans I) / rang (1–7) du plan de référence, en conservant la même orientation. Les câbles inter-array suivent le plan de câblage réel (strings radiant depuis la sous-station). Les positions sont figées : rien ne se déplace à la souris ou au doigt, seuls la navigation (pan/zoom) et le pointage sont possibles.
 - **Catégories principales (8 max)** : le camembert au centre de chaque fondation, une part par catégorie (ex: *Cable Cleats*, *PIM Gate*, *Scotch Kote*, *Gearing Repair*…), chacune avec sa couleur.
-- **Variables secondaires (16 max)** : anneau de petits points autour du cercle, pour suivre des tâches précises (boulons, échelle, anodes, etc.), indépendamment des catégories principales.
+- **Variables secondaires (16 max)** : deuxième couronne de cellules autour du camembert central, pour suivre des tâches précises (boulons, échelle, anodes, etc.), indépendamment des catégories principales.
 - **Zoom & déplacement fluides** : pincer pour zoomer (tactile), molette (souris), boutons +/− et "vue d'ensemble" ; glisser pour déplacer la vue. Optimisé pour consulter les 62 fondations d'un coup d'œil sur mobile, puis zoomer sur un secteur précis.
 - **Liaisons** : reliez les points entre eux (mode "Relier") pour représenter un tracé de câble ou un cheminement.
 - **Points bloquants** : marquez un point d'une croix ✕ (comme les marqueurs rouges sur l'affiche) avec une note associée.

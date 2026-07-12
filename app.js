@@ -1,13 +1,13 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'worksite-tracker:v4';
+  const STORAGE_KEY = 'worksite-tracker:v5';
   const SVGNS = 'http://www.w3.org/2000/svg';
 
   const NODE_R = 24;       // inner pie radius (8 main categories)
-  const HUB_R = 7;         // center hub (drag handle / open details)
-  const RING_R = 34;       // outer ring radius (16 secondary variables)
-  const DOT_R = 4.2;       // outer dot radius
+  const HUB_R = 7;         // center hub (open details)
+  const RING_IN = 26;      // second ring (16 secondary variables), inner radius
+  const RING_OUT = 36;     // second ring, outer radius
   const GRID_UNIT = 120;   // world-space spacing between adjacent grid cells
 
   const MAX_CATEGORIES = 8;
@@ -32,22 +32,29 @@
     M: [1, 2, 3, 4, 5, 6, 7],
   };
 
-  // Inter-array cable strings, read off the reference site map ("Dieppe Le
-  // Tréport" cable schedule): each pair is one cable segment. 'OSS' is the
-  // offshore substation. This replaces any earlier guessed topology.
+  // Inter-array cable strings, read segment by segment off the reference site
+  // map ("Dieppe Le Tréport"): each cable there is labelled with its endpoint
+  // pair — e.g. WT62 (G4-E4), WT72 (H4-E3), WT12 (K4-J4) — and the WT
+  // numbering walks each string outward from the OSS, which pins the feeder
+  // of every string. 8 strings radiate from the OSS (which sits on the empty
+  // L3 grid slot).
   const STRING_EDGES = [
-    ['OSS', 'K7'], ['OSS', 'K6'], ['OSS', 'K5'], ['OSS', 'L7'], ['OSS', 'K4'], ['OSS', 'J1'], ['OSS', 'J2'],
-    ['K7', 'J7'], ['J7', 'H7'], ['H7', 'G7'], ['G7', 'F7'], ['F7', 'E7'], ['E7', 'D7'],
-    ['K6', 'J6'], ['J6', 'H6'], ['H6', 'G6'], ['G6', 'F6'], ['F6', 'E6'], ['E6', 'D6'],
-    ['K5', 'J5'], ['J5', 'H5'], ['H5', 'G5'], ['G5', 'F5'], ['F5', 'E5'], ['E5', 'D5'],
-    ['L7', 'L6'], ['L6', 'L5'], ['L5', 'L4'], ['L4', 'L2'], ['L2', 'L1'],
-    ['L7', 'M7'], ['L6', 'M6'], ['L5', 'M5'], ['L4', 'M4'], ['L4', 'M3'], ['L2', 'M2'], ['L1', 'M1'],
-    ['K4', 'J4'], ['J4', 'H4'], ['H4', 'G4'], ['G4', 'E4'], ['E4', 'D4'],
-    ['H4', 'E3'], ['E3', 'D3'], ['D3', 'C3'], ['C3', 'B3'], ['B3', 'B2'],
-    ['D4', 'C4'], ['C4', 'B4'], ['B4', 'A4'], ['A4', 'A3'], ['A3', 'A2'],
-    ['K4', 'K3'], ['B2', 'C2'],
-    ['J1', 'H1'], ['H1', 'G1'], ['G1', 'F1'], ['F1', 'E1'],
-    ['J2', 'H2'], ['H2', 'G2'], ['G2', 'F2'], ['F2', 'E2'],
+    // String rangée 7 : OSS→K7→J7→…→D7 (WT31-37)
+    ['OSS', 'K7'], ['K7', 'J7'], ['J7', 'H7'], ['H7', 'G7'], ['G7', 'F7'], ['F7', 'E7'], ['E7', 'D7'],
+    // String rangée 6, feeder en K5 (WT41-48)
+    ['OSS', 'K5'], ['K5', 'K6'], ['K6', 'J6'], ['J6', 'H6'], ['H6', 'G6'], ['G6', 'F6'], ['F6', 'E6'], ['E6', 'D6'],
+    // String rangée 5, feeder en K4 via J4 (WT11-18)
+    ['OSS', 'K4'], ['K4', 'J4'], ['J4', 'J5'], ['J5', 'H5'], ['H5', 'G5'], ['G5', 'F5'], ['F5', 'E5'], ['E5', 'D5'],
+    // String rangée 4 puis colonne A (WT61-68)
+    ['OSS', 'G4'], ['G4', 'E4'], ['E4', 'D4'], ['D4', 'C4'], ['C4', 'B4'], ['B4', 'A4'], ['A4', 'A3'], ['A3', 'A2'],
+    // String H4 → rangée 3, avec antennes C2 et E2 (WT71-78)
+    ['OSS', 'H4'], ['H4', 'E3'], ['E3', 'D3'], ['D3', 'C3'], ['C3', 'B3'], ['B3', 'B2'], ['C3', 'C2'], ['E3', 'E2'],
+    // String sud : J1 puis rangées 1 et 2 (WT81-88)
+    ['OSS', 'J1'], ['J1', 'J2'], ['J1', 'H1'], ['H1', 'H2'], ['H2', 'G2'], ['G2', 'F2'], ['H1', 'G1'], ['G1', 'F1'], ['F1', 'E1'],
+    // String L4→L7 en peigne avec les antennes M4→M7 (WT121-128)
+    ['OSS', 'L4'], ['L4', 'L5'], ['L5', 'L6'], ['L6', 'L7'], ['L7', 'M7'], ['L4', 'M4'], ['L5', 'M5'], ['L6', 'M6'],
+    // String cluster sud-est : K3, L2, L1, M1-M3 (WT151-157)
+    ['OSS', 'K3'], ['K3', 'L2'], ['L2', 'L1'], ['L1', 'M1'], ['L2', 'M2'], ['M2', 'M3'],
   ];
 
   let state = null;
@@ -79,6 +86,12 @@
 
   function polar(radius, angle) {
     return { x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
+  }
+
+  function ringSegmentPath(rIn, rOut, a0, a1) {
+    const large = (a1 - a0) > Math.PI ? 1 : 0;
+    const pt = (r, a) => `${r * Math.cos(a)},${r * Math.sin(a)}`;
+    return `M${pt(rIn, a0)} L${pt(rOut, a0)} A${rOut},${rOut} 0 ${large} 1 ${pt(rOut, a1)} L${pt(rIn, a1)} A${rIn},${rIn} 0 ${large} 0 ${pt(rIn, a0)} Z`;
   }
 
   function microPaletteColor(i) {
@@ -150,10 +163,10 @@
       });
     });
 
-    // offshore substation (OSS) — sits at the J3 grid slot on the reference map
-    // (no turbine there), not one of the 62 foundations.
-    const jIndex = COLS.indexOf('J');
-    const ossPos = gridToWorld(jIndex, 3);
+    // offshore substation (OSS) — sits on the empty L3 grid slot on the
+    // reference map, not one of the 62 foundations.
+    const lIndex = COLS.indexOf('L');
+    const ossPos = gridToWorld(lIndex, 3);
     const oss = {
       id: uid(),
       label: 'OSS',
@@ -230,20 +243,6 @@
     touchAndSave();
   }
 
-  function updateConnectionsFor(nodeId) {
-    const project = getActiveProject();
-    project.connections.forEach((conn) => {
-      if (conn.a !== nodeId && conn.b !== nodeId) return;
-      const line = svgEl.querySelector(`[data-conn-id="${conn.id}"]`);
-      if (!line) return;
-      const a = project.nodes.find((n) => n.id === conn.a);
-      const b = project.nodes.find((n) => n.id === conn.b);
-      if (!a || !b) return;
-      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-    });
-  }
-
   // ---------- camera (pan / zoom) ----------
   function svgRect() {
     return svgEl.getBoundingClientRect();
@@ -287,7 +286,7 @@
       applyViewBox();
       return;
     }
-    const pad = RING_R + 40;
+    const pad = RING_OUT + 40;
     const xs = project.nodes.map((n) => n.x);
     const ys = project.nodes.map((n) => n.y);
     const minX = Math.min(...xs) - pad;
@@ -323,16 +322,11 @@
     const activePointers = new Map();
     let gesture = null;
 
-    function isInsideNode(target) {
-      return !!(target.closest && target.closest('.node-group'));
-    }
-
     svgEl.addEventListener('pointerdown', (e) => {
-      if (isInsideNode(e.target)) return;
       activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { svgEl.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
       if (activePointers.size === 1) {
-        gesture = { type: 'pan', lastX: e.clientX, lastY: e.clientY, moved: false };
+        gesture = { type: 'pan', lastX: e.clientX, lastY: e.clientY, moved: false, downTarget: e.target };
       } else if (activePointers.size === 2) {
         const pts = [...activePointers.values()];
         gesture = {
@@ -353,7 +347,8 @@
       if (gesture.type === 'pan' && activePointers.size === 1) {
         const dx = e.clientX - gesture.lastX;
         const dy = e.clientY - gesture.lastY;
-        if (Math.abs(dx) + Math.abs(dy) > 2) gesture.moved = true;
+        if (gesture.startX === undefined) { gesture.startX = gesture.lastX; gesture.startY = gesture.lastY; }
+        if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) > 6) gesture.moved = true;
         camera.x -= dx / camera.scale;
         camera.y -= dy / camera.scale;
         gesture.lastX = e.clientX;
@@ -373,14 +368,13 @@
       }
     });
 
-    function endPointer(e) {
+    function endPointer(e, isTapCandidate) {
       if (!activePointers.has(e.pointerId)) return;
       activePointers.delete(e.pointerId);
       try { svgEl.releasePointerCapture(e.pointerId); } catch (err) { /* noop */ }
       if (activePointers.size === 0) {
-        if (gesture && !gesture.moved && mode === 'connect' && pendingConnectFrom) {
-          pendingConnectFrom = null;
-          renderCanvas();
+        if (isTapCandidate && gesture && gesture.type === 'pan' && !gesture.moved) {
+          handleTap(gesture.downTarget);
         }
         gesture = null;
       } else if (activePointers.size === 1) {
@@ -388,8 +382,8 @@
         gesture = { type: 'pan', lastX: remaining.x, lastY: remaining.y, moved: true };
       }
     }
-    svgEl.addEventListener('pointerup', endPointer);
-    svgEl.addEventListener('pointercancel', endPointer);
+    svgEl.addEventListener('pointerup', (e) => endPointer(e, true));
+    svgEl.addEventListener('pointercancel', (e) => endPointer(e, false));
 
     svgEl.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -401,6 +395,29 @@
   }
 
   // ---------- node interaction ----------
+  // Nodes and cables are fixed on the map: a tap (finger or mouse, without
+  // movement) toggles/opens things, any movement pans the camera instead.
+  function handleTap(target) {
+    const project = getActiveProject();
+    if (!project || !target) return;
+    const lineEl = target.closest && target.closest('.connection-line');
+    if (lineEl) {
+      if (mode === 'delete') deleteConnection(lineEl.dataset.connId);
+      return;
+    }
+    const groupEl = target.closest && target.closest('.node-group');
+    if (groupEl) {
+      const node = project.nodes.find((n) => n.id === groupEl.dataset.nodeId);
+      if (node) handleNodeClick(node, (target.dataset && target.dataset.kind) || 'body');
+      return;
+    }
+    // tap on empty canvas
+    if (mode === 'connect' && pendingConnectFrom) {
+      pendingConnectFrom = null;
+      renderCanvas();
+    }
+  }
+
   function handleNodeClick(node, kind) {
     if (mode === 'delete') {
       deleteNode(node.id);
@@ -436,44 +453,6 @@
       renderCanvas();
       renderProgress();
     }
-  }
-
-  function attachNodeHandlers(g, node) {
-    let startX; let startY; let origX; let origY; let dragging = false; let kind = 'body';
-
-    g.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      kind = e.target.dataset.kind || 'body';
-      startX = e.clientX; startY = e.clientY;
-      origX = node.x; origY = node.y;
-      dragging = false;
-      try { g.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
-    });
-
-    g.addEventListener('pointermove', (e) => {
-      if (startX === undefined) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      if (!dragging && Math.hypot(dx, dy) > 5) dragging = true;
-      if (dragging) {
-        node.x = origX + dx / camera.scale;
-        node.y = origY + dy / camera.scale;
-        g.setAttribute('transform', `translate(${node.x},${node.y})`);
-        updateConnectionsFor(node.id);
-      }
-    });
-
-    g.addEventListener('pointerup', (e) => {
-      if (startX === undefined) return;
-      try { g.releasePointerCapture(e.pointerId); } catch (err) { /* noop */ }
-      if (dragging) {
-        touchAndSave();
-      } else {
-        handleNodeClick(node, kind);
-      }
-      startX = undefined;
-      dragging = false;
-    });
   }
 
   // ---------- rendering ----------
@@ -627,10 +606,6 @@
       line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
       line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
       line.setAttribute('class', `connection-line${mode === 'delete' ? ' deletable' : ''}`);
-      line.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (mode === 'delete') deleteConnection(conn.id);
-      });
       svgEl.appendChild(line);
     });
 
@@ -669,7 +644,6 @@
         ossLabel.textContent = node.label;
         g.appendChild(ossLabel);
 
-        attachNodeHandlers(g, node);
         svgEl.appendChild(g);
         return;
       }
@@ -712,18 +686,22 @@
       g.appendChild(innerOutline);
 
       if (microCount > 0) {
+        // second ring: one annular cell per secondary variable, with the same
+        // dark dividers as the central pie
         const microSlice = (2 * Math.PI) / microCount;
         project.microVars.forEach((mv, i) => {
-          const angle = -Math.PI / 2 + i * microSlice;
-          const pos = polar(RING_R, angle);
-          const dot = document.createElementNS(SVGNS, 'circle');
-          dot.setAttribute('cx', String(pos.x));
-          dot.setAttribute('cy', String(pos.y));
-          dot.setAttribute('r', String(DOT_R));
-          dot.setAttribute('class', 'node-outer-dot');
-          dot.setAttribute('data-kind', `micro-${mv.id}`);
-          dot.style.fill = node.micro[mv.id] ? mv.color : 'var(--panel)';
-          g.appendChild(dot);
+          // a lone variable still renders as a full ring (two half-cells)
+          const spans = microCount === 1
+            ? [[-Math.PI / 2, Math.PI / 2], [Math.PI / 2, (3 * Math.PI) / 2]]
+            : [[-Math.PI / 2 + i * microSlice, -Math.PI / 2 + (i + 1) * microSlice]];
+          spans.forEach(([a0, a1]) => {
+            const cell = document.createElementNS(SVGNS, 'path');
+            cell.setAttribute('d', ringSegmentPath(RING_IN, RING_OUT, a0, a1));
+            cell.setAttribute('class', 'node-ring-cell');
+            cell.setAttribute('data-kind', `micro-${mv.id}`);
+            cell.style.fill = node.micro[mv.id] ? mv.color : 'var(--panel)';
+            g.appendChild(cell);
+          });
         });
       }
 
@@ -735,24 +713,23 @@
 
       if (node.issue) {
         const x = document.createElementNS(SVGNS, 'text');
-        const xPos = polar(RING_R + 9, -Math.PI / 4);
+        const xPos = polar(RING_OUT + 10, -Math.PI / 4);
         x.setAttribute('x', String(xPos.x));
         x.setAttribute('y', String(xPos.y));
         x.setAttribute('class', 'node-issue-x');
-        x.setAttribute('font-size', '13');
+        x.setAttribute('font-size', '14');
         x.textContent = '✕';
         g.appendChild(x);
       }
 
       const label = document.createElementNS(SVGNS, 'text');
       label.setAttribute('x', '0');
-      label.setAttribute('y', String(RING_R + 13));
+      label.setAttribute('y', String(RING_OUT + 14));
       label.setAttribute('text-anchor', 'middle');
       label.setAttribute('class', 'node-label');
       label.textContent = node.label;
       g.appendChild(label);
 
-      attachNodeHandlers(g, node);
       svgEl.appendChild(g);
     });
   }
@@ -1162,7 +1139,7 @@
 
   function updateCanvasHint() {
     const hints = {
-      select: 'Touchez une part pour cocher/décocher. Centre = détails. Glissez pour déplacer.',
+      select: 'Touchez une part ou une cellule pour cocher/décocher. Centre = détails. Glissez pour naviguer.',
       connect: 'Touchez un premier point puis un second pour créer une liaison.',
       delete: 'Touchez un point ou une liaison pour la supprimer.',
     };
