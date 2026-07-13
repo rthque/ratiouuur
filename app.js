@@ -322,6 +322,11 @@
     if (!Array.isArray(project.reportTypes) || !project.reportTypes.length) {
       project.reportTypes = defaultReportTypes();
     }
+    // purge punch tombstones older than 30 days
+    const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+    project.punchList = project.punchList.filter(
+      (p) => !p.deleted || new Date(p.updatedAt || 0).getTime() > cutoff,
+    );
     (project.nodes || []).forEach((n) => normalizeNode(n, project));
     // the OSS position is derived data: keep it pinned between K04 and L04
     const oss = (project.nodes || []).find((n) => n.substation);
@@ -494,7 +499,9 @@
       mergeStampMap(inNode.micro);
       Object.entries(inNode.taskComments || {}).forEach(([id, comment]) => {
         const tid = catMap[id] || microMap[id];
-        if (tid && comment && !tNode.taskComments[tid]) tNode.taskComments[tid] = comment;
+        if (!tid || !comment) return;
+        const merged = pickText(tNode.taskComments[tid], comment);
+        if (merged) tNode.taskComments[tid] = merged;
       });
       Object.entries(inNode.reports || {}).forEach(([id, entries]) => {
         const tid = reportMap[id];
@@ -509,27 +516,288 @@
         tNode.reports[tid] = existing;
       });
       if (inNode.issue) tNode.issue = true;
-      if (inNode.note && !tNode.note) tNode.note = inNode.note;
+      tNode.note = pickText(tNode.note, inNode.note);
     });
 
-    const seenIds = new Set(target.punchList.map((p) => p.id));
-    const seenTexts = new Set(target.punchList.map((p) => p.text));
+    const byId = new Map(target.punchList.map((p) => [p.id, p]));
+    const byText = new Map(target.punchList.map((p) => [p.text, p]));
     (incoming.punchList || []).forEach((p) => {
-      if (!seenIds.has(p.id) && !seenTexts.has(p.text)) target.punchList.push(p);
+      const existing = byId.get(p.id) || byText.get(p.text);
+      if (!existing) {
+        target.punchList.push(p);
+        byId.set(p.id, p);
+        byText.set(p.text, p);
+        return;
+      }
+      const tExisting = new Date(existing.updatedAt || existing.at || 0).getTime();
+      const tIncoming = new Date(p.updatedAt || p.at || 0).getTime();
+      if (tIncoming > tExisting) {
+        existing.done = !!p.done;
+        existing.deleted = !!p.deleted;
+        existing.doneBy = p.doneBy || null;
+        existing.updatedAt = p.updatedAt;
+      }
     });
 
     Object.entries(incoming.procedures || {}).forEach(([id, proc]) => {
       const tid = catMap[id] || microMap[id];
       if (!tid) return;
       const tProc = getProcedure(target, tid);
-      ['en', 'fr', 'tools', 'ppe'].forEach((k) => { if (!tProc[k] && proc && proc[k]) tProc[k] = proc[k]; });
+      ['en', 'fr', 'tools', 'ppe'].forEach((k) => {
+        tProc[k] = pickText(tProc[k], proc && proc[k]);
+      });
     });
+  }
+
+  // Deterministic text merge (both devices converge to the same value):
+  // longer text wins, ties broken lexicographically.
+  function pickText(a, b) {
+    const ta = (a || '').trim();
+    const tb = (b || '').trim();
+    if (!tb) return ta;
+    if (!ta) return tb;
+    if (ta.length !== tb.length) return ta.length > tb.length ? ta : tb;
+    return ta > tb ? ta : tb;
+  }
+
+  // ---------- team sync (Firebase Realtime Database, REST + SSE) ----------
+  // Set SYNC_DB_URL to the team database URL, e.g.
+  // 'https://trefou-default-rtdb.europe-west1.firebasedatabase.app'
+  // Empty string = sync disabled, the app works purely locally.
+  const SYNC_DB_URL = '';
+  const SYNC_URL_OVERRIDE_KEY = 'worksite-tracker:syncUrl';
+
+  const sync = {
+    status: 'off', // 'off' | 'live' | 'syncing' | 'offline'
+    dirty: false,
+    es: null,
+    url: null,
+    pullTimer: null,
+    pushTimer: null,
+    retryTimer: null,
+    pollTimer: null,
+    busy: false,
+  };
+
+  function syncBaseUrl() {
+    return (localStorage.getItem(SYNC_URL_OVERRIDE_KEY) || SYNC_DB_URL || '').replace(/\/+$/, '');
+  }
+
+  function projectSlug(name) {
+    return String(name || 'project')
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'project';
+  }
+
+  function syncProjectUrl() {
+    const base = syncBaseUrl();
+    const project = getActiveProject();
+    if (!base || !project) return null;
+    return `${base}/projects/${projectSlug(project.name)}.json`;
+  }
+
+  function setSyncStatus(status) {
+    sync.status = status;
+    const chip = document.getElementById('sync-chip');
+    if (!chip) return;
+    if (status === 'off') { chip.classList.add('hidden'); return; }
+    chip.classList.remove('hidden');
+    chip.classList.remove('sync-live', 'sync-syncing', 'sync-offline');
+    if (status === 'live') { chip.classList.add('sync-live'); chip.textContent = '● live'; chip.title = 'Synced with the team in real time'; }
+    else if (status === 'syncing') { chip.classList.add('sync-syncing'); chip.textContent = '● sync'; chip.title = 'Syncing…'; }
+    else { chip.classList.add('sync-offline'); chip.textContent = '○ offline'; chip.title = 'No connection — working locally, will sync when back online'; }
+  }
+
+  // Order-independent digest of the data that matters, so two devices can
+  // tell whether they hold the same information (colors/positions excluded).
+  function projectDigest(project) {
+    const lines = [];
+    const itemName = {};
+    project.categories.concat(project.microVars).forEach((i) => { itemName[i.id] = i.name; });
+    const reportName = {};
+    (project.reportTypes || []).forEach((r) => { reportName[r.id] = r.name; });
+    project.categories.concat(project.microVars).forEach((i) => lines.push(`C|${i.name}`));
+    (project.nodes || []).forEach((n) => {
+      [n.status || {}, n.micro || {}].forEach((map) => {
+        Object.entries(map).forEach(([id, st]) => {
+          if (st) lines.push(`S|${n.label}|${itemName[id] || id}|${st.partial ? 'p' : 'd'}|${st.at || ''}|${st.by || ''}`);
+        });
+      });
+      Object.entries(n.taskComments || {}).forEach(([id, c]) => {
+        if (c) lines.push(`K|${n.label}|${itemName[id] || id}|${c}`);
+      });
+      Object.entries(n.reports || {}).forEach(([id, entries]) => {
+        (entries || []).forEach((e) => lines.push(`R|${n.label}|${reportName[id] || id}|${e.at || ''}|${e.by || ''}`));
+      });
+      if (n.note) lines.push(`N|${n.label}|${n.note}`);
+      if (n.issue) lines.push(`X|${n.label}`);
+    });
+    (project.punchList || []).forEach((p) => {
+      lines.push(`P|${p.text}|${p.done ? 1 : 0}|${p.deleted ? 1 : 0}|${p.updatedAt || ''}`);
+    });
+    Object.entries(project.procedures || {}).forEach(([id, proc]) => {
+      if (!proc) return;
+      const body = ['en', 'fr', 'tools', 'ppe'].map((k) => proc[k] || '').join('|');
+      if (body.replace(/\|/g, '')) lines.push(`M|${itemName[id] || id}|${body}`);
+    });
+    return lines.sort().join('\n');
+  }
+
+  function markSyncDirty() {
+    if (sync.status === 'off' || !canEdit()) return;
+    sync.dirty = true;
+    clearTimeout(sync.pushTimer);
+    sync.pushTimer = setTimeout(syncPush, 1500);
+  }
+
+  async function syncFetchRemote() {
+    const res = await fetch(sync.url, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!res.ok) throw new Error(`GET ${res.status}`);
+    return res.json();
+  }
+
+  // pull remote state and merge it into the local project (nothing is lost:
+  // per-task most recent wins, reports/punch are unioned)
+  async function syncPull() {
+    if (!sync.url || sync.busy) return;
+    sync.busy = true;
+    try {
+      setSyncStatus('syncing');
+      const remote = await syncFetchRemote();
+      const project = getActiveProject();
+      if (remote && Array.isArray(remote.nodes)) {
+        normalizeProject(remote);
+        const digestBefore = projectDigest(project);
+        mergeProjects(project, remote);
+        normalizeProject(project);
+        const digestAfter = projectDigest(project);
+        if (digestAfter !== digestBefore) {
+          saveState();
+          refreshAfterRemoteChange();
+          showToast('🔄 Updated from the team');
+        }
+        // local holds info the server lacks → push it
+        if (canEdit() && digestAfter !== projectDigest(remote)) {
+          sync.dirty = true;
+        }
+      } else if (canEdit()) {
+        sync.dirty = true; // empty space: we are the first device, seed it
+      }
+      if (sync.dirty && canEdit()) {
+        clearTimeout(sync.pushTimer);
+        sync.pushTimer = setTimeout(syncPush, 400);
+      }
+      setSyncStatus('live');
+    } catch (e) {
+      setSyncStatus('offline');
+      scheduleSyncRetry();
+    } finally {
+      sync.busy = false;
+    }
+  }
+
+  async function syncPush() {
+    if (!sync.url || !canEdit()) return;
+    if (sync.busy) { clearTimeout(sync.pushTimer); sync.pushTimer = setTimeout(syncPush, 800); return; }
+    sync.busy = true;
+    try {
+      setSyncStatus('syncing');
+      const project = getActiveProject();
+      // merge latest remote first so a PUT never erases teammates' work
+      try {
+        const remote = await syncFetchRemote();
+        if (remote && Array.isArray(remote.nodes)) {
+          normalizeProject(remote);
+          mergeProjects(project, remote);
+          normalizeProject(project);
+          saveState();
+        }
+      } catch (e) { /* remote unreachable — try the PUT anyway */ }
+      const res = await fetch(sync.url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(project),
+      });
+      if (!res.ok) throw new Error(`PUT ${res.status}`);
+      sync.dirty = false;
+      setSyncStatus('live');
+    } catch (e) {
+      setSyncStatus('offline');
+      scheduleSyncRetry();
+    } finally {
+      sync.busy = false;
+    }
+  }
+
+  function scheduleSyncRetry() {
+    clearTimeout(sync.retryTimer);
+    sync.retryTimer = setTimeout(() => {
+      if (sync.status === 'offline') startSync();
+    }, 10000);
+  }
+
+  function schedulePull(delay) {
+    clearTimeout(sync.pullTimer);
+    sync.pullTimer = setTimeout(syncPull, delay);
+  }
+
+  // lightweight refresh that leaves any text field the user is typing in alone
+  function refreshAfterRemoteChange() {
+    renderCanvas();
+    renderProgress();
+    renderPunchList();
+    renderHeader();
+    const modalOpen = !document.getElementById('node-modal').classList.contains('hidden');
+    if (modalOpen && openNodeId) {
+      const node = currentModalNode();
+      const project = getActiveProject();
+      if (node && !node.substation) {
+        renderModalChecklist(document.getElementById('modal-categories'), project.categories, node, 'status');
+        renderModalChecklist(document.getElementById('modal-micro'), project.microVars, node, 'micro');
+        renderModalReports(node);
+      }
+    }
+  }
+
+  function stopSync() {
+    if (sync.es) { try { sync.es.close(); } catch (e) { /* noop */ } sync.es = null; }
+    clearTimeout(sync.pullTimer);
+    clearTimeout(sync.pushTimer);
+    clearTimeout(sync.retryTimer);
+    clearInterval(sync.pollTimer);
+  }
+
+  function startSync() {
+    stopSync();
+    sync.url = syncProjectUrl();
+    if (!sync.url) { setSyncStatus('off'); return; }
+    setSyncStatus('syncing');
+    syncPull();
+    // Firebase RTDB streams changes over SSE on the same REST URL
+    try {
+      sync.es = new EventSource(sync.url);
+      const onRemoteEvent = () => schedulePull(600);
+      sync.es.addEventListener('put', onRemoteEvent);
+      sync.es.addEventListener('patch', onRemoteEvent);
+      sync.es.onerror = () => {
+        // EventSource retries by itself; if it gave up, fall back to retry loop
+        if (sync.es && sync.es.readyState === 2) {
+          setSyncStatus('offline');
+          scheduleSyncRetry();
+        }
+      };
+    } catch (e) { /* SSE unavailable — polling below still covers us */ }
+    // safety-net poll in case an SSE event is missed
+    sync.pollTimer = setInterval(() => syncPull(), 60000);
   }
 
   function touchAndSave() {
     const project = getActiveProject();
     if (project) project.updatedAt = new Date().toISOString();
     saveState();
+    markSyncDirty();
   }
 
   function getActiveProject() {
@@ -1152,7 +1420,7 @@
     const ul = document.getElementById('punch-list');
     ul.innerHTML = '';
     if (!project) return;
-    project.punchList.forEach((item) => {
+    project.punchList.filter((item) => !item.deleted).forEach((item) => {
       const li = document.createElement('li');
       li.className = `punch-item${item.done ? ' done' : ''}`;
 
@@ -1162,21 +1430,31 @@
       cb.disabled = !canEdit();
       cb.addEventListener('change', () => {
         item.done = cb.checked;
+        item.doneBy = cb.checked && user ? user.name : null;
+        item.updatedAt = new Date().toISOString();
         touchAndSave();
         renderPunchList();
       });
 
       const span = document.createElement('span');
       span.textContent = item.text;
-
       li.append(cb, span);
+
+      if (item.done && item.doneBy) {
+        const by = document.createElement('span');
+        by.className = 'check-meta';
+        by.textContent = item.doneBy;
+        li.appendChild(by);
+      }
 
       if (canEdit()) {
         const del = document.createElement('button');
         del.className = 'btn btn-ghost';
         del.textContent = '✕';
         del.addEventListener('click', () => {
-          project.punchList = project.punchList.filter((p) => p.id !== item.id);
+          // tombstone instead of removal so the deletion syncs to teammates
+          item.deleted = true;
+          item.updatedAt = new Date().toISOString();
           touchAndSave();
           renderPunchList();
         });
@@ -1595,6 +1873,7 @@
       saveState();
       render();
       safeFitToContent();
+      startSync();
     });
 
     document.getElementById('btn-new-project').addEventListener('click', () => {
@@ -1619,6 +1898,7 @@
       project.name = name.trim() || project.name;
       touchAndSave();
       render();
+      startSync(); // the sync path follows the project name
     });
 
     document.getElementById('btn-delete-project').addEventListener('click', () => {
@@ -1896,6 +2176,7 @@
     applyPermissionClasses();
     render();
     safeFitToContent();
+    startSync();
     if (!user) showLogin();
     else maybeRemindBackup();
   }

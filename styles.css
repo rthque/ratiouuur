@@ -491,3 +491,13 @@ body:not(.is-admin) .admin-only { display: none !important; }
   h2 { font-size: 13px; }
   .modal-header h3 { font-size: 17px; }
 }
+
+/* ---------- sync status ---------- */
+.sync-chip {
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  border-radius: 999px; padding: 3px 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text-muted);
+}
+.sync-chip.sync-live { color: #15803d; border-color: #bbe5c8; background: #f0faf3; }
+.sync-chip.sync-syncing { color: var(--orange-dark); border-color: #fcd9bd; background: #fff7ef; }
+.sync-chip.sync-offline { color: var(--text-muted); }
