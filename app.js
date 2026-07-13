@@ -323,6 +323,13 @@
       project.reportTypes = defaultReportTypes();
     }
     (project.nodes || []).forEach((n) => normalizeNode(n, project));
+    // the OSS position is derived data: keep it pinned between K04 and L04
+    const oss = (project.nodes || []).find((n) => n.substation);
+    if (oss) {
+      const pos = ossPosition();
+      oss.x = pos.x;
+      oss.y = pos.y;
+    }
     return project;
   }
 
@@ -368,10 +375,9 @@
       });
     });
 
-    // offshore substation (OSS) — sits on the empty L3 grid slot on the
-    // reference map, not one of the 62 foundations.
-    const lIndex = COLS.indexOf('L');
-    const ossPos = gridToWorld(lIndex, 3);
+    // offshore substation (OSS) — halfway between K04 and L04, not one of
+    // the 62 foundations.
+    const ossPos = ossPosition();
     project.nodes.push({
       id: uid(),
       label: 'OSS',
@@ -536,6 +542,13 @@
       x: (colIndex - row) * GRID_UNIT,
       y: -(colIndex + row) * GRID_UNIT,
     };
+  }
+
+  // OSS sits halfway between K04 and L04
+  function ossPosition() {
+    const k04 = gridToWorld(COLS.indexOf('K'), 4);
+    const l04 = gridToWorld(COLS.indexOf('L'), 4);
+    return { x: (k04.x + l04.x) / 2, y: (k04.y + l04.y) / 2 };
   }
 
   // ---------- mutations ----------
