@@ -6,10 +6,10 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const LOCALE = 'en-GB';
 
-  const NODE_R = 30;       // inner pie radius (8 main categories)
-  const HUB_R = 8;         // center hub (open details)
-  const RING_IN = 33;      // second ring (16 secondary categories), inner radius
-  const RING_OUT = 46;     // second ring, outer radius
+  const NODE_R = 34;       // inner pie radius (8 main categories)
+  const HUB_R = 9;         // center hub (open details)
+  const RING_IN = 37;      // second ring (16 secondary categories), inner radius
+  const RING_OUT = 52;     // second ring, outer radius
   const GRID_UNIT = 140;   // world-space spacing between adjacent grid cells
 
   const MAX_CATEGORIES = 8;
@@ -211,6 +211,7 @@
     applyPermissionClasses();
     render();
     safeFitToContent();
+    maybeRemindBackup();
   }
 
   function logout() {
@@ -413,6 +414,112 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
+  // ---------- data safety ----------
+  const SNAP_PREFIX = 'worksite-tracker:snap:';
+
+  // one automatic local snapshot per day (last 5 kept) to recover from mistakes
+  function dailySnapshot() {
+    try {
+      const key = SNAP_PREFIX + new Date().toISOString().slice(0, 10);
+      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state));
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith(SNAP_PREFIX)).sort();
+      while (keys.length > 5) localStorage.removeItem(keys.shift());
+    } catch (e) { /* storage full — never block the app */ }
+  }
+
+  function maybeRemindBackup() {
+    if (!canEdit()) return;
+    const project = getActiveProject();
+    if (!project) return;
+    const hasData = project.nodes.some((n) => Object.values(n.status).some(Boolean)
+      || Object.values(n.micro).some(Boolean)
+      || Object.keys(n.reports || {}).some((k) => (n.reports[k] || []).length));
+    if (!hasData) return;
+    const last = state.lastExportAt ? new Date(state.lastExportAt).getTime() : 0;
+    if (Date.now() - last > 24 * 3600 * 1000) {
+      setTimeout(() => showToast('💾 Tip: export a backup (right panel) — data lives only on this device.'), 1800);
+    }
+  }
+
+  function markExported() {
+    state.lastExportAt = new Date().toISOString();
+    saveState();
+  }
+
+  // Merge a project exported from another phone into the local one:
+  // categories/reports are matched by name, each task keeps the most recent
+  // stamp, report occurrences are unioned — nothing is ever deleted.
+  function mergeProjects(target, incoming) {
+    const mapByName = (fromList, toList, maxLen) => {
+      const map = {};
+      (fromList || []).forEach((item) => {
+        let match = toList.find((t) => t.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+        if (!match && toList.length < maxLen) {
+          match = { id: uid(), name: item.name, color: item.color };
+          toList.push(match);
+        }
+        if (match) map[item.id] = match.id;
+      });
+      return map;
+    };
+    const catMap = mapByName(incoming.categories, target.categories, MAX_CATEGORIES);
+    const microMap = mapByName(incoming.microVars, target.microVars, MAX_MICRO);
+    const reportMap = mapByName(incoming.reportTypes, target.reportTypes, 99);
+    target.nodes.forEach((n) => normalizeNode(n, target));
+
+    const newer = (a, b) => {
+      if (!a) return b || null;
+      if (!b) return a;
+      return new Date(b.at || 0).getTime() > new Date(a.at || 0).getTime() ? b : a;
+    };
+
+    (incoming.nodes || []).forEach((inNode) => {
+      const tNode = target.nodes.find((n) => n.label === inNode.label);
+      if (!tNode) return;
+      const mergeStampMap = (map) => {
+        Object.entries(map || {}).forEach(([id, stamp]) => {
+          const tid = catMap[id] || microMap[id];
+          if (!tid) return;
+          const bucket = (tid in tNode.status) ? tNode.status : tNode.micro;
+          bucket[tid] = newer(bucket[tid], stamp);
+        });
+      };
+      mergeStampMap(inNode.status);
+      mergeStampMap(inNode.micro);
+      Object.entries(inNode.taskComments || {}).forEach(([id, comment]) => {
+        const tid = catMap[id] || microMap[id];
+        if (tid && comment && !tNode.taskComments[tid]) tNode.taskComments[tid] = comment;
+      });
+      Object.entries(inNode.reports || {}).forEach(([id, entries]) => {
+        const tid = reportMap[id];
+        if (!tid) return;
+        const existing = tNode.reports[tid] || [];
+        const seen = new Set(existing.map((en) => `${en.at}|${en.by}`));
+        (entries || []).forEach((en) => {
+          const key = `${en.at}|${en.by}`;
+          if (!seen.has(key)) { existing.push(en); seen.add(key); }
+        });
+        existing.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+        tNode.reports[tid] = existing;
+      });
+      if (inNode.issue) tNode.issue = true;
+      if (inNode.note && !tNode.note) tNode.note = inNode.note;
+    });
+
+    const seenIds = new Set(target.punchList.map((p) => p.id));
+    const seenTexts = new Set(target.punchList.map((p) => p.text));
+    (incoming.punchList || []).forEach((p) => {
+      if (!seenIds.has(p.id) && !seenTexts.has(p.text)) target.punchList.push(p);
+    });
+
+    Object.entries(incoming.procedures || {}).forEach(([id, proc]) => {
+      const tid = catMap[id] || microMap[id];
+      if (!tid) return;
+      const tProc = getProcedure(target, tid);
+      ['en', 'fr', 'tools', 'ppe'].forEach((k) => { if (!tProc[k] && proc && proc[k]) tProc[k] = proc[k]; });
+    });
+  }
+
   function touchAndSave() {
     const project = getActiveProject();
     if (project) project.updatedAt = new Date().toISOString();
@@ -544,11 +651,15 @@
         gesture = { type: 'pan', lastX: e.clientX, lastY: e.clientY, moved: false, downTarget: e.target };
       } else if (activePointers.size === 2) {
         const pts = [...activePointers.values()];
+        const m = mid(pts[0], pts[1]);
+        // anchor the world point under the pinch midpoint ONCE, while the
+        // camera is still untouched — recomputing it against an already
+        // mutated camera makes the anchor drift and the map "fly away"
         gesture = {
           type: 'pinch',
           startDist: dist(pts[0], pts[1]) || 1,
           startScale: camera.scale,
-          startMid: mid(pts[0], pts[1]),
+          anchorWorld: screenToWorld(m.x, m.y),
           moved: false,
         };
       }
@@ -572,11 +683,10 @@
         const pts = [...activePointers.values()];
         const newDist = dist(pts[0], pts[1]) || 1;
         const newMid = mid(pts[0], pts[1]);
-        const worldBefore = screenToWorld(gesture.startMid.x, gesture.startMid.y);
         camera.scale = clampScale(gesture.startScale * (newDist / gesture.startDist));
         const rect = svgRect();
-        camera.x = worldBefore.x - (newMid.x - rect.left - rect.width / 2) / camera.scale;
-        camera.y = worldBefore.y - (newMid.y - rect.top - rect.height / 2) / camera.scale;
+        camera.x = gesture.anchorWorld.x - (newMid.x - rect.left - rect.width / 2) / camera.scale;
+        camera.y = gesture.anchorWorld.y - (newMid.y - rect.top - rect.height / 2) / camera.scale;
         gesture.moved = true;
         applyViewBox();
       }
@@ -1355,6 +1465,7 @@
     a.download = `treFOU_backup_${dateTag}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    markExported();
     showToast('CSV backup downloaded.');
   }
 
@@ -1683,10 +1794,12 @@
       a.download = `${project.name.replace(/[^a-z0-9]+/gi, '_')}.json`;
       a.click();
       URL.revokeObjectURL(url);
+      markExported();
+      showToast('Project exported — share the file to sync another phone.');
     });
 
     document.getElementById('btn-import').addEventListener('click', () => {
-      if (!isAdmin()) return;
+      if (!canEdit()) return;
       document.getElementById('file-import').click();
     });
 
@@ -1700,15 +1813,29 @@
           if (!imported || !Array.isArray(imported.categories) || !Array.isArray(imported.nodes)) {
             throw new Error('invalid project format');
           }
-          imported.id = uid();
-          imported.name = imported.name ? `${imported.name} (imported)` : 'Imported project';
-          imported.updatedAt = new Date().toISOString();
           normalizeProject(imported);
-          state.projects[imported.id] = imported;
-          state.activeProjectId = imported.id;
-          saveState();
-          render();
-          safeFitToContent();
+          const targetProject = Object.values(state.projects).find((p) => p.name === imported.name);
+          if (targetProject && confirm(
+            `A project named "${imported.name}" already exists.\n\n`
+            + 'OK = MERGE the imported data into it (most recent state per task wins, nothing is deleted).\n'
+            + 'Cancel = keep it as a separate copy.',
+          )) {
+            mergeProjects(targetProject, imported);
+            state.activeProjectId = targetProject.id;
+            touchAndSave();
+            render();
+            safeFitToContent();
+            showToast('Merged — most recent state kept for every task.');
+          } else {
+            imported.id = uid();
+            if (targetProject) imported.name = `${imported.name} (imported)`;
+            imported.updatedAt = new Date().toISOString();
+            state.projects[imported.id] = imported;
+            state.activeProjectId = imported.id;
+            saveState();
+            render();
+            safeFitToContent();
+          }
         } catch (err) {
           alert(`Invalid file: ${err.message}`);
         }
@@ -1746,6 +1873,7 @@
   function init() {
     state = loadState();
     saveState();
+    dailySnapshot();
     user = loadUser();
     svgEl = document.getElementById('canvas');
     renderLogin();
@@ -1756,6 +1884,7 @@
     render();
     safeFitToContent();
     if (!user) showLogin();
+    else maybeRemindBackup();
   }
 
   init();
