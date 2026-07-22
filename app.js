@@ -49,23 +49,40 @@
     return `${col}0${row}`;
   }
 
-  // Inter-array cable strings, read segment by segment off the reference site
-  // map ("Dieppe Le Tréport"): each cable there is labelled with its endpoint
-  // pair — e.g. WT62 (G4-E4), WT72 (H4-E3), WT12 (K4-J4) — and the WT
-  // numbering walks each string outward from the OSS, which pins the feeder
-  // of every string. 8 strings radiate from the OSS (empty L3 grid slot).
-  const STRING_EDGES = [
-    ['OSS', 'K07'], ['K07', 'J07'], ['J07', 'H07'], ['H07', 'G07'], ['G07', 'F07'], ['F07', 'E07'], ['E07', 'D07'],
-    ['OSS', 'K05'], ['K05', 'K06'], ['K06', 'J06'], ['J06', 'H06'], ['H06', 'G06'], ['G06', 'F06'], ['F06', 'E06'], ['E06', 'D06'],
-    ['OSS', 'K04'], ['K04', 'J04'], ['J04', 'J05'], ['J05', 'H05'], ['H05', 'G05'], ['G05', 'F05'], ['F05', 'E05'], ['E05', 'D05'],
-    ['OSS', 'G04'], ['G04', 'E04'], ['E04', 'D04'], ['D04', 'C04'], ['C04', 'B04'], ['B04', 'A04'], ['A04', 'A03'], ['A03', 'A02'],
-    ['OSS', 'H04'], ['H04', 'E03'], ['E03', 'D03'], ['D03', 'C03'], ['C03', 'B03'], ['B03', 'B02'], ['C03', 'C02'], ['E03', 'E02'],
-    ['OSS', 'J01'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['H01', 'G01'], ['G01', 'F01'], ['F01', 'E01'],
-    ['OSS', 'L04'], ['L04', 'L05'], ['L05', 'L06'], ['L06', 'L07'], ['L07', 'M07'], ['L04', 'M04'], ['L05', 'M05'], ['L06', 'M06'],
-    ['OSS', 'L03'], ['L03', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L03', 'M03'], ['L02', 'M02'], ['L01', 'M01'],
+  // 8 inter-array cable strings (numbered 1..8), each an ordered list of cable
+  // segments, read off the reference site map ("Dieppe Le Tréport"): the WT
+  // numbering walks each string outward from the OSS (empty L3 grid slot).
+  const STRING_GROUPS = [
+    [['OSS', 'K07'], ['K07', 'J07'], ['J07', 'H07'], ['H07', 'G07'], ['G07', 'F07'], ['F07', 'E07'], ['E07', 'D07']],
+    [['OSS', 'K05'], ['K05', 'K06'], ['K06', 'J06'], ['J06', 'H06'], ['H06', 'G06'], ['G06', 'F06'], ['F06', 'E06'], ['E06', 'D06']],
+    [['OSS', 'K04'], ['K04', 'J04'], ['J04', 'J05'], ['J05', 'H05'], ['H05', 'G05'], ['G05', 'F05'], ['F05', 'E05'], ['E05', 'D05']],
+    [['OSS', 'G04'], ['G04', 'E04'], ['E04', 'D04'], ['D04', 'C04'], ['C04', 'B04'], ['B04', 'A04'], ['A04', 'A03'], ['A03', 'A02']],
+    [['OSS', 'H04'], ['H04', 'E03'], ['E03', 'D03'], ['D03', 'C03'], ['C03', 'B03'], ['B03', 'B02'], ['C03', 'C02'], ['E03', 'E02']],
+    [['OSS', 'J01'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['H01', 'G01'], ['G01', 'F01'], ['F01', 'E01']],
+    [['OSS', 'L04'], ['L04', 'L05'], ['L05', 'L06'], ['L06', 'L07'], ['L07', 'M07'], ['L04', 'M04'], ['L05', 'M05'], ['L06', 'M06']],
+    [['OSS', 'L03'], ['L03', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L03', 'M03'], ['L02', 'M02'], ['L01', 'M01']],
   ];
 
-  const LAYOUT_VERSION = 2;
+  const CABLE_COLOR = '#8A9AB0';
+  const SRCC_COLOR = '#C4453C';
+  const DEFAULT_ACCESS_RULES = [
+    'SRCC — String / cable circuit under restricted access.',
+    '• Confirm the string is authorised & safe to approach before boarding any FOU on it.',
+    '• Isolation / LOTO and permit-to-work must be in place.',
+    '• Coordinate with the control room; stay clear of live HV cable works.',
+    '• Do not start works on this string without SRCC clearance.',
+  ].join('\n');
+
+  // annotation font sizes are in WORLD units, so a small note is only legible
+  // once zoomed in, and a big one stays readable when zoomed right out.
+  const ANNOT_SIZES = [
+    { key: 'S', label: 'Small', size: 16 },
+    { key: 'M', label: 'Medium', size: 30 },
+    { key: 'L', label: 'Large', size: 52 },
+    { key: 'XL', label: 'Extra large', size: 90 },
+  ];
+
+  const LAYOUT_VERSION = 3;
 
   // Real WGS84 positions of every foundation and the OSS, from the official
   // coordinates spreadsheet: label -> [lat, lon, DMS string].
@@ -158,6 +175,8 @@
   let user = null; // { name, role: 'tech'|'visitor', admin: bool }
   let mode = 'select'; // 'select' | 'connect' | 'delete'
   let pendingConnectFrom = null;
+  let placingText = false;
+  let editingAnnotId = null;
   let openNodeId = null;
   let pendingLoginName = null;
   let procLang = 'en';
@@ -367,8 +386,30 @@
       procedures: {},
       nodes: [],
       connections: [],
+      strings: defaultStrings(),
+      accessRules: DEFAULT_ACCESS_RULES,
+      annotations: [],
       punchList: [],
     };
+  }
+
+  function defaultStrings() {
+    return STRING_GROUPS.map((_, i) => ({ n: i + 1, srcc: false }));
+  }
+
+  // (re)build cable connections from the 8 string groups, tagging each segment
+  // with its 0-based string index, matching endpoints by label.
+  function rebuildConnections(project) {
+    const byLabel = {};
+    project.nodes.forEach((n) => { byLabel[n.label] = n; });
+    project.connections = [];
+    STRING_GROUPS.forEach((edges, si) => {
+      edges.forEach(([la, lb]) => {
+        if (byLabel[la] && byLabel[lb]) {
+          project.connections.push({ id: uid(), a: byLabel[la].id, b: byLabel[lb].id, string: si });
+        }
+      });
+    });
   }
 
   function defaultReportTypes() {
@@ -408,9 +449,20 @@
     project.connections = project.connections || [];
     project.punchList = project.punchList || [];
     project.procedures = project.procedures || {};
+    project.annotations = project.annotations || [];
+    if (!Array.isArray(project.strings) || project.strings.length !== STRING_GROUPS.length) {
+      project.strings = defaultStrings();
+    }
+    if (typeof project.accessRules !== 'string') project.accessRules = DEFAULT_ACCESS_RULES;
     if (!Array.isArray(project.reportTypes) || !project.reportTypes.length) {
       project.reportTypes = defaultReportTypes();
     }
+    // structured consumables live on each procedure
+    Object.values(project.procedures).forEach((proc) => {
+      if (proc && !Array.isArray(proc.consumables)) proc.consumables = [];
+    });
+    // rename the historical seed project
+    if (project.name === 'Dieppe Le Tréport — 62 FOU') project.name = 'BOP tasks on tre FOU';
     // purge punch tombstones older than 30 days
     const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
     project.punchList = project.punchList.filter(
@@ -438,12 +490,7 @@
         normalizeNode(l03, project);
         project.nodes.push(l03);
       }
-      const byLabel = {};
-      project.nodes.forEach((n) => { byLabel[n.label] = n; });
-      project.connections = [];
-      STRING_EDGES.forEach(([a, b]) => {
-        if (byLabel[a] && byLabel[b]) project.connections.push({ id: uid(), a: byLabel[a].id, b: byLabel[b].id });
-      });
+      rebuildConnections(project);
       const brandColors = {
         'Tower cabinet rust treatment & rubber placement': '#274A72',
         'ScotchKoat on earthing cable': '#0085AD',
@@ -474,7 +521,7 @@
   }
 
   function seedWindFarmProject() {
-    const project = createEmptyProject('Dieppe Le Tréport — 62 FOU');
+    const project = createEmptyProject('BOP tasks on tre FOU');
 
     project.layoutVersion = LAYOUT_VERSION;
 
@@ -534,11 +581,7 @@
       substation: true,
     });
 
-    STRING_EDGES.forEach(([labelA, labelB]) => {
-      const a = project.nodes.find((n) => n.label === labelA);
-      const b = project.nodes.find((n) => n.label === labelB);
-      if (a && b) project.connections.push({ id: uid(), a: a.id, b: b.id });
-    });
+    rebuildConnections(project);
 
     return project;
   }
@@ -683,6 +726,42 @@
       ['en', 'fr', 'tools', 'ppe'].forEach((k) => {
         tProc[k] = pickText(tProc[k], proc && proc[k]);
       });
+      // consumables: union by name, restock flag OR-ed
+      if (Array.isArray(proc && proc.consumables)) {
+        tProc.consumables = tProc.consumables || [];
+        proc.consumables.forEach((c) => {
+          if (!c || !c.name) return;
+          const found = tProc.consumables.find((x) => normalizeName(x.name) === normalizeName(c.name));
+          if (found) found.restock = found.restock || !!c.restock;
+          else tProc.consumables.push({ name: c.name, restock: !!c.restock });
+        });
+      }
+    });
+
+    // strings SRCC: OR the restricted flag (safety-conservative); access rules text merged
+    if (Array.isArray(incoming.strings)) {
+      target.strings = target.strings || defaultStrings();
+      incoming.strings.forEach((s, i) => {
+        if (target.strings[i]) target.strings[i].srcc = target.strings[i].srcc || !!s.srcc;
+      });
+    }
+    target.accessRules = pickText(target.accessRules, incoming.accessRules);
+
+    // annotations: union by id (keep the longer text on conflict)
+    target.annotations = target.annotations || [];
+    const annById = new Map(target.annotations.map((a) => [a.id, a]));
+    (incoming.annotations || []).forEach((a) => {
+      const found = annById.get(a.id);
+      if (!found) { target.annotations.push(a); annById.set(a.id, a); }
+      else { found.text = pickText(found.text, a.text); }
+    });
+
+    // hidden flags: keep whichever archived it (OR)
+    incoming.categories.concat(incoming.microVars || []).forEach((ic) => {
+      const tid = catMap[ic.id] || microMap[ic.id];
+      if (!tid) return;
+      const titem = target.categories.concat(target.microVars).find((t) => t.id === tid);
+      if (titem && ic.hidden) titem.hidden = true;
     });
   }
 
@@ -771,13 +850,20 @@
       if (n.note) lines.push(`N|${n.label}|${n.note}`);
       if (n.issue) lines.push(`X|${n.label}`);
     });
+    project.categories.concat(project.microVars).forEach((i) => {
+      if (i.hidden) lines.push(`H|${i.name}`);
+    });
     (project.punchList || []).forEach((p) => {
       lines.push(`P|${p.text}|${p.done ? 1 : 0}|${p.deleted ? 1 : 0}|${p.updatedAt || ''}`);
     });
+    (project.strings || []).forEach((s, i) => lines.push(`G|${i}|${s.srcc ? 1 : 0}`));
+    lines.push(`A|${project.accessRules || ''}`);
+    (project.annotations || []).forEach((an) => lines.push(`T|${an.id}|${an.text}|${an.size}|${Math.round(an.x)}|${Math.round(an.y)}`));
     Object.entries(project.procedures || {}).forEach(([id, proc]) => {
       if (!proc) return;
       const body = ['en', 'fr', 'tools', 'ppe'].map((k) => proc[k] || '').join('|');
-      if (body.replace(/\|/g, '')) lines.push(`M|${itemName[id] || id}|${body}`);
+      const cons = (proc.consumables || []).map((c) => `${c.name}:${c.restock ? 1 : 0}`).join(',');
+      if (body.replace(/\|/g, '') || cons) lines.push(`M|${itemName[id] || id}|${body}|${cons}`);
     });
     return lines.sort().join('\n');
   }
@@ -1033,7 +1119,9 @@
       x: (minX + maxX) / 2,
       y: (minY + maxY) / 2,
       scale,
-      minScale: scale * 0.4,
+      // never let the farm shrink below "just fits the screen" — a deep
+      // zoom-out used to make the whole park tiny.
+      minScale: scale * 0.92,
       maxScale: Math.max(10, scale * 14),
     };
     applyViewBox();
@@ -1059,7 +1147,7 @@
       activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { svgEl.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
       if (activePointers.size === 1) {
-        gesture = { type: 'pan', lastX: e.clientX, lastY: e.clientY, moved: false, downTarget: e.target };
+        gesture = { type: 'pan', lastX: e.clientX, lastY: e.clientY, downX: e.clientX, downY: e.clientY, moved: false, downTarget: e.target };
       } else if (activePointers.size === 2) {
         const pts = [...activePointers.values()];
         const m = mid(pts[0], pts[1]);
@@ -1109,7 +1197,7 @@
       try { svgEl.releasePointerCapture(e.pointerId); } catch (err) { /* noop */ }
       if (activePointers.size === 0) {
         if (isTapCandidate && gesture && gesture.type === 'pan' && !gesture.moved) {
-          handleTap(gesture.downTarget);
+          handleTap(gesture.downTarget, gesture.downX, gesture.downY);
         }
         gesture = null;
       } else if (activePointers.size === 1) {
@@ -1132,9 +1220,25 @@
   // ---------- node interaction ----------
   // Nodes and cables are fixed on the map: a tap (finger or mouse, without
   // movement) toggles/opens things, any movement pans the camera instead.
-  function handleTap(target) {
+  function handleTap(target, screenX, screenY) {
     const project = getActiveProject();
     if (!project || !target) return;
+
+    // placing a new map annotation
+    if (placingText) {
+      placingText = false;
+      svgEl.classList.remove('placing');
+      const world = screenToWorld(screenX, screenY);
+      openTextEditor(null, world.x, world.y);
+      return;
+    }
+
+    // tapping an existing annotation
+    if (target.dataset && target.dataset.annotId) {
+      if (canEdit()) openTextEditor(target.dataset.annotId);
+      return;
+    }
+
     const lineEl = target.closest && target.closest('.connection-line');
     if (lineEl) {
       if (mode === 'delete' && isAdmin()) deleteConnection(lineEl.dataset.connId);
@@ -1195,6 +1299,8 @@
     renderHeader();
     renderCategories();
     renderMicroList();
+    renderStrings();
+    renderReportsEditor();
     renderCanvas();
     renderProgress();
     renderPunchList();
@@ -1246,86 +1352,145 @@
     return `#${toH(r)}${toH(g)}${toH(b)}`;
   }
 
-  function renderCategoryGroup(listEl, items, groupKey) {
+  function buildCategoryRow(item, groupKey) {
     const project = getActiveProject();
-    listEl.innerHTML = '';
     const admin = isAdmin();
+    const statusKey = groupKey === 'categories' ? 'status' : 'micro';
+    const li = document.createElement('li');
+    li.className = `category-row${item.hidden ? ' archived' : ''}`;
 
-    items.forEach((item) => {
-      const li = document.createElement('li');
-      li.className = 'category-row';
+    if (admin) {
+      const color = document.createElement('input');
+      color.type = 'color';
+      color.value = toHex(item.color);
+      color.addEventListener('input', () => {
+        item.color = color.value;
+        touchAndSave();
+        renderCanvas();
+        renderProgress();
+      });
 
-      if (admin) {
-        const color = document.createElement('input');
-        color.type = 'color';
-        color.value = toHex(item.color);
-        color.addEventListener('input', () => {
-          item.color = color.value;
-          touchAndSave();
-          renderCanvas();
-          renderProgress();
+      const name = document.createElement('input');
+      name.type = 'text';
+      name.value = item.name;
+      name.addEventListener('change', () => {
+        item.name = name.value.trim() || item.name;
+        touchAndSave();
+        render();
+      });
+
+      // hide / show (archive) — non-destructive, keeps history
+      const hide = document.createElement('button');
+      hide.className = 'btn btn-ghost';
+      hide.textContent = item.hidden ? '🙈' : '👁';
+      hide.title = item.hidden ? 'Show on the map again' : 'Hide from the map (keep history)';
+      hide.addEventListener('click', () => {
+        item.hidden = !item.hidden;
+        touchAndSave();
+        render();
+      });
+
+      // bulk-validate this category on every foundation (discreet)
+      const bulk = document.createElement('button');
+      bulk.className = 'btn btn-ghost bulk-btn';
+      bulk.textContent = '✓·all';
+      bulk.title = 'Mark this task DONE on ALL foundations';
+      bulk.addEventListener('click', () => {
+        const done = project.nodes.filter((n) => !n.substation && n[statusKey][item.id] && !n[statusKey][item.id].partial).length;
+        const total = project.nodes.filter((n) => !n.substation).length;
+        const undo = done === total;
+        if (!confirm(undo
+          ? `Un-tick "${item.name}" on all ${total} foundations?`
+          : `Tick "${item.name}" as DONE on all ${total} foundations?`)) return;
+        project.nodes.forEach((n) => {
+          if (n.substation) return;
+          n[statusKey][item.id] = undo ? null : checkStamp();
         });
+        touchAndSave();
+        render();
+        showToast(undo ? 'Category cleared everywhere.' : 'Category validated on all foundations.');
+      });
 
-        const name = document.createElement('input');
-        name.type = 'text';
-        name.value = item.name;
-        name.addEventListener('change', () => {
-          item.name = name.value.trim() || item.name;
-          touchAndSave();
-          renderProgress();
+      const move = document.createElement('button');
+      move.className = 'btn btn-ghost';
+      move.textContent = '⇄';
+      move.title = groupKey === 'categories' ? 'Move to secondary' : 'Move to main';
+      move.addEventListener('click', () => {
+        const from = groupKey === 'categories' ? project.categories : project.microVars;
+        const to = groupKey === 'categories' ? project.microVars : project.categories;
+        const max = groupKey === 'categories' ? MAX_MICRO : MAX_CATEGORIES;
+        if (to.length >= max) { showToast('Target group is full.'); return; }
+        const idx = from.findIndex((c) => c.id === item.id);
+        from.splice(idx, 1);
+        to.push(item);
+        const fromMap = groupKey === 'categories' ? 'status' : 'micro';
+        const toMap = groupKey === 'categories' ? 'micro' : 'status';
+        project.nodes.forEach((n) => {
+          n[toMap][item.id] = n[fromMap][item.id] || null;
+          delete n[fromMap][item.id];
         });
+        touchAndSave();
+        render();
+      });
 
-        const move = document.createElement('button');
-        move.className = 'btn btn-ghost';
-        move.textContent = '⇄';
-        move.title = groupKey === 'categories' ? 'Move to secondary' : 'Move to main';
-        move.addEventListener('click', () => {
-          const from = groupKey === 'categories' ? project.categories : project.microVars;
-          const to = groupKey === 'categories' ? project.microVars : project.categories;
-          const max = groupKey === 'categories' ? MAX_MICRO : MAX_CATEGORIES;
-          if (to.length >= max) { showToast('Target group is full.'); return; }
-          const idx = from.findIndex((c) => c.id === item.id);
-          from.splice(idx, 1);
-          to.push(item);
-          const fromMap = groupKey === 'categories' ? 'status' : 'micro';
-          const toMap = groupKey === 'categories' ? 'micro' : 'status';
-          project.nodes.forEach((n) => {
-            n[toMap][item.id] = n[fromMap][item.id] || null;
-            delete n[fromMap][item.id];
-          });
-          touchAndSave();
-          render();
-        });
+      const del = document.createElement('button');
+      del.className = 'btn btn-ghost btn-danger';
+      del.textContent = '✕';
+      del.title = 'Delete category';
+      del.addEventListener('click', () => {
+        if (!confirm(`Delete category "${item.name}"? This erases its data. To keep history, hide it instead.`)) return;
+        if (groupKey === 'categories') {
+          project.categories = project.categories.filter((c) => c.id !== item.id);
+          project.nodes.forEach((n) => { delete n.status[item.id]; });
+        } else {
+          project.microVars = project.microVars.filter((c) => c.id !== item.id);
+          project.nodes.forEach((n) => { delete n.micro[item.id]; });
+        }
+        touchAndSave();
+        render();
+      });
 
-        const del = document.createElement('button');
-        del.className = 'btn btn-ghost btn-danger';
-        del.textContent = '✕';
-        del.title = 'Delete category';
-        del.addEventListener('click', () => {
-          if (!confirm(`Delete category "${item.name}"?`)) return;
-          if (groupKey === 'categories') {
-            project.categories = project.categories.filter((c) => c.id !== item.id);
-            project.nodes.forEach((n) => { delete n.status[item.id]; });
-          } else {
-            project.microVars = project.microVars.filter((c) => c.id !== item.id);
-            project.nodes.forEach((n) => { delete n.micro[item.id]; });
-          }
-          touchAndSave();
-          render();
-        });
-
-        li.append(color, name, move, del);
-      } else {
-        const dot = document.createElement('span');
-        dot.className = 'dot';
-        dot.style.background = item.color;
-        const name = document.createElement('span');
-        name.className = 'category-name';
-        name.textContent = item.name;
-        li.append(dot, name);
+      const controls = document.createElement('span');
+      controls.className = 'cat-controls';
+      controls.append(hide, bulk, move, del);
+      li.append(color, name, controls);
+    } else {
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = item.color;
+      const name = document.createElement('span');
+      name.className = 'category-name';
+      name.textContent = item.name;
+      li.append(dot, name);
+      if (item.hidden) {
+        const tag = document.createElement('span');
+        tag.className = 'archived-tag';
+        tag.textContent = 'archived';
+        li.appendChild(tag);
       }
-      listEl.appendChild(li);
-    });
+    }
+    return li;
+  }
+
+  function renderCategoryGroup(listEl, items, groupKey) {
+    listEl.innerHTML = '';
+    const active = items.filter((it) => !it.hidden);
+    const archived = items.filter((it) => it.hidden);
+
+    active.forEach((item) => listEl.appendChild(buildCategoryRow(item, groupKey)));
+
+    if (archived.length) {
+      const details = document.createElement('details');
+      details.className = 'archived-group';
+      const summary = document.createElement('summary');
+      summary.textContent = `Archived (${archived.length})`;
+      details.appendChild(summary);
+      const ul = document.createElement('ul');
+      ul.className = 'category-list';
+      archived.forEach((item) => ul.appendChild(buildCategoryRow(item, groupKey)));
+      details.appendChild(ul);
+      listEl.appendChild(details);
+    }
   }
 
   function renderCategories() {
@@ -1348,18 +1513,135 @@
     renderCategoryGroup(document.getElementById('micro-list'), project.microVars, 'microVars');
   }
 
+  // ---------- strings (SRCC) ----------
+  function renderStrings() {
+    const project = getActiveProject();
+    const listEl = document.getElementById('string-list');
+    if (!listEl || !project) return;
+    listEl.innerHTML = '';
+    const editable = canEdit();
+    const anySrcc = project.strings.some((s) => s.srcc);
+
+    project.strings.forEach((s, i) => {
+      const li = document.createElement('li');
+      li.className = `string-row${s.srcc ? ' srcc' : ''}`;
+
+      const num = document.createElement('span');
+      num.className = 'string-num';
+      num.textContent = `S${i + 1}`;
+      li.appendChild(num);
+
+      const state = document.createElement('span');
+      state.className = 'string-state';
+      state.textContent = s.srcc ? '⚠ SRCC — restricted' : 'Normal access';
+      li.appendChild(state);
+
+      if (editable) {
+        const btn = document.createElement('button');
+        btn.className = `btn string-toggle${s.srcc ? ' on' : ''}`;
+        btn.textContent = s.srcc ? 'SRCC' : 'Set SRCC';
+        btn.title = 'Toggle SRCC restricted access for this string';
+        btn.addEventListener('click', () => {
+          s.srcc = !s.srcc;
+          touchAndSave();
+          render();
+          if (s.srcc) showAccessRules(i);
+        });
+        li.appendChild(btn);
+      }
+      listEl.appendChild(li);
+    });
+
+    // access-rules reminder + editor
+    const rulesWrap = document.getElementById('string-rules');
+    if (rulesWrap) {
+      rulesWrap.classList.toggle('hidden', !anySrcc && !isAdmin());
+      const rulesBody = document.getElementById('string-rules-body');
+      rulesBody.innerHTML = '';
+      if (isAdmin()) {
+        const ta = document.createElement('textarea');
+        ta.rows = 5;
+        ta.value = project.accessRules;
+        ta.addEventListener('change', () => {
+          project.accessRules = ta.value;
+          touchAndSave();
+        });
+        rulesBody.appendChild(ta);
+      } else {
+        const p = document.createElement('p');
+        p.className = 'access-rules-text';
+        p.textContent = project.accessRules;
+        rulesBody.appendChild(p);
+      }
+    }
+  }
+
+  function showAccessRules(stringIndex) {
+    const project = getActiveProject();
+    const label = stringIndex != null ? `String S${stringIndex + 1} is now SRCC.\n\n` : '';
+    alert(`${label}${project.accessRules}`);
+  }
+
+  // ---------- reports / additional inspections editor ----------
+  function renderReportsEditor() {
+    const project = getActiveProject();
+    const listEl = document.getElementById('reports-list');
+    if (!listEl || !project) return;
+    listEl.innerHTML = '';
+    const admin = isAdmin();
+
+    project.reportTypes.forEach((rt) => {
+      const li = document.createElement('li');
+      li.className = 'category-row';
+      if (admin) {
+        const name = document.createElement('input');
+        name.type = 'text';
+        name.value = rt.name;
+        name.addEventListener('change', () => {
+          rt.name = name.value.trim() || rt.name;
+          touchAndSave();
+          render();
+        });
+        const del = document.createElement('button');
+        del.className = 'btn btn-ghost btn-danger';
+        del.textContent = '✕';
+        del.title = 'Delete inspection type';
+        del.addEventListener('click', () => {
+          if (!confirm(`Delete inspection "${rt.name}"? Its recorded occurrences will be removed.`)) return;
+          project.reportTypes = project.reportTypes.filter((r) => r.id !== rt.id);
+          project.nodes.forEach((n) => { delete n.reports[rt.id]; });
+          touchAndSave();
+          render();
+        });
+        li.append(name, del);
+      } else {
+        const name = document.createElement('span');
+        name.className = 'category-name';
+        name.textContent = rt.name;
+        li.appendChild(name);
+      }
+      listEl.appendChild(li);
+    });
+  }
+
   function statusFill(stamp, item) {
     if (!stamp) return 'var(--panel)';
     if (stamp.partial) return `url(#hatch-${item.id})`;
     return item.color;
   }
 
+  function visibleItems(items) {
+    return (items || []).filter((it) => !it.hidden);
+  }
+
   function renderCanvas() {
     const project = getActiveProject();
     svgEl.innerHTML = '';
     if (!project) return;
-    const catCount = project.categories.length;
-    const microCount = project.microVars.length;
+    const cats = visibleItems(project.categories);
+    const micros = visibleItems(project.microVars);
+    const catCount = cats.length;
+    const microCount = micros.length;
 
     // hatch patterns (one per category) for "partially done"
     const defs = document.createElementNS(SVGNS, 'defs');
@@ -1383,16 +1665,50 @@
     });
     svgEl.appendChild(defs);
 
+    const nodeById = {};
+    project.nodes.forEach((n) => { nodeById[n.id] = n; });
+    const srccByString = {};
+    (project.strings || []).forEach((s, i) => { srccByString[i] = s.srcc; });
+
     project.connections.forEach((conn) => {
-      const a = project.nodes.find((n) => n.id === conn.a);
-      const b = project.nodes.find((n) => n.id === conn.b);
+      const a = nodeById[conn.a];
+      const b = nodeById[conn.b];
       if (!a || !b) return;
+      const srcc = srccByString[conn.string];
       const line = document.createElementNS(SVGNS, 'line');
       line.setAttribute('data-conn-id', conn.id);
       line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
       line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-      line.setAttribute('class', `connection-line${mode === 'delete' ? ' deletable' : ''}`);
+      line.setAttribute('class', `connection-line${srcc ? ' srcc' : ''}${mode === 'delete' ? ' deletable' : ''}`);
+      line.style.stroke = srcc ? SRCC_COLOR : CABLE_COLOR;
       svgEl.appendChild(line);
+    });
+
+    // string number badges, placed on the first foundation of each string
+    STRING_GROUPS.forEach((edges, si) => {
+      const feederLabel = (edges[0] && edges[0][1]) || null;
+      const feeder = feederLabel && project.nodes.find((n) => n.label === feederLabel);
+      if (!feeder) return;
+      const srcc = srccByString[si];
+      const gs = document.createElementNS(SVGNS, 'g');
+      gs.setAttribute('transform', `translate(${feeder.x},${feeder.y - RING_OUT - 16})`);
+      gs.setAttribute('class', 'string-badge');
+      const badge = document.createElementNS(SVGNS, 'rect');
+      badge.setAttribute('x', '-15'); badge.setAttribute('y', '-12');
+      badge.setAttribute('width', '30'); badge.setAttribute('height', '20');
+      badge.setAttribute('rx', '6');
+      badge.setAttribute('fill', srcc ? SRCC_COLOR : 'var(--panel)');
+      badge.setAttribute('stroke', srcc ? SRCC_COLOR : 'var(--line-strong)');
+      badge.setAttribute('stroke-width', '1.2');
+      gs.appendChild(badge);
+      const t = document.createElementNS(SVGNS, 'text');
+      t.setAttribute('x', '0'); t.setAttribute('y', '3');
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('class', 'string-badge-text');
+      t.setAttribute('fill', srcc ? '#fff' : 'var(--text)');
+      t.textContent = `S${si + 1}${srcc ? ' ⚠' : ''}`;
+      gs.appendChild(t);
+      svgEl.appendChild(gs);
     });
 
     project.nodes.forEach((node) => {
@@ -1443,7 +1759,7 @@
         circle.style.fill = 'var(--panel)';
         g.appendChild(circle);
       } else if (catCount === 1) {
-        const cat = project.categories[0];
+        const cat = cats[0];
         const circle = document.createElementNS(SVGNS, 'circle');
         circle.setAttribute('r', String(NODE_R));
         circle.setAttribute('class', 'node-wedge');
@@ -1452,7 +1768,7 @@
         g.appendChild(circle);
       } else {
         const slice = (2 * Math.PI) / catCount;
-        project.categories.forEach((cat, i) => {
+        cats.forEach((cat, i) => {
           const start = -Math.PI / 2 + i * slice;
           const end = start + slice;
           const path = document.createElementNS(SVGNS, 'path');
@@ -1466,7 +1782,7 @@
 
       if (microCount > 0) {
         const microSlice = (2 * Math.PI) / microCount;
-        project.microVars.forEach((mv, i) => {
+        micros.forEach((mv, i) => {
           const spans = microCount === 1
             ? [[-Math.PI / 2, Math.PI / 2], [Math.PI / 2, (3 * Math.PI) / 2]]
             : [[-Math.PI / 2 + i * microSlice, -Math.PI / 2 + (i + 1) * microSlice]];
@@ -1507,6 +1823,20 @@
       g.appendChild(label);
 
       svgEl.appendChild(g);
+    });
+
+    // free-text map annotations (world-space font size: small = only legible
+    // zoomed in, big = readable when zoomed right out)
+    (project.annotations || []).forEach((an) => {
+      const t = document.createElementNS(SVGNS, 'text');
+      t.setAttribute('x', String(an.x));
+      t.setAttribute('y', String(an.y));
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('class', 'map-annotation');
+      t.setAttribute('font-size', String(an.size || 30));
+      t.setAttribute('data-annot-id', an.id);
+      t.textContent = an.text;
+      svgEl.appendChild(t);
     });
   }
 
@@ -1816,6 +2146,18 @@
     noteEl.disabled = !canEdit();
     document.getElementById('modal-title').textContent = node.substation ? 'Substation details' : `Foundation ${node.label}`;
 
+    // SRCC access-rules reminder for foundations on a restricted string
+    const srccEl = document.getElementById('modal-srcc');
+    const strings = nodeStringIndices(project, node.id).filter((si) => project.strings[si] && project.strings[si].srcc);
+    if (strings.length) {
+      const names = strings.map((si) => `S${si + 1}`).join(', ');
+      srccEl.innerHTML = `<strong>⚠ SRCC — ${escapeHtml(names)} — restricted access</strong>`
+        + `<div class="srcc-rules">${escapeHtml(project.accessRules)}</div>`;
+      srccEl.classList.remove('hidden');
+    } else {
+      srccEl.classList.add('hidden');
+    }
+
     const catListEl = document.getElementById('modal-categories');
     const microListEl = document.getElementById('modal-micro');
     const reportsEl = document.getElementById('modal-reports');
@@ -1971,8 +2313,352 @@
         details.appendChild(wrap);
       });
 
+      // structured consumables (feed the day planner; flag recurring restock)
+      proc.consumables = proc.consumables || [];
+      const consWrap = document.createElement('div');
+      consWrap.className = 'proc-section';
+      const consH = document.createElement('h4');
+      consH.textContent = 'Consumables (day plan)';
+      consWrap.appendChild(consH);
+
+      if (admin) {
+        const ul = document.createElement('ul');
+        ul.className = 'consumable-edit';
+        proc.consumables.forEach((c, ci) => {
+          const li = document.createElement('li');
+          const nameIn = document.createElement('input');
+          nameIn.type = 'text';
+          nameIn.value = c.name || '';
+          nameIn.placeholder = 'Consumable name';
+          nameIn.addEventListener('change', () => { c.name = nameIn.value.trim(); touchAndSave(); });
+          const restockLbl = document.createElement('label');
+          restockLbl.className = 'restock-toggle';
+          const restockCb = document.createElement('input');
+          restockCb.type = 'checkbox';
+          restockCb.checked = !!c.restock;
+          restockCb.addEventListener('change', () => { c.restock = restockCb.checked; touchAndSave(); });
+          restockLbl.append(restockCb, document.createTextNode(' ↻ restock often'));
+          const del = document.createElement('button');
+          del.className = 'btn btn-ghost btn-danger';
+          del.textContent = '✕';
+          del.addEventListener('click', () => {
+            proc.consumables.splice(ci, 1);
+            touchAndSave();
+            renderProcedures();
+          });
+          li.append(nameIn, restockLbl, del);
+          ul.appendChild(li);
+        });
+        consWrap.appendChild(ul);
+        const add = document.createElement('button');
+        add.className = 'btn btn-ghost';
+        add.textContent = '+ Add consumable';
+        add.addEventListener('click', () => {
+          proc.consumables.push({ name: '', restock: false });
+          touchAndSave();
+          renderProcedures();
+        });
+        consWrap.appendChild(add);
+      } else if (proc.consumables.length) {
+        const ul = document.createElement('ul');
+        ul.className = 'consumable-list';
+        proc.consumables.forEach((c) => {
+          if (!c.name) return;
+          const li = document.createElement('li');
+          li.className = c.restock ? 'restock' : '';
+          li.textContent = c.name;
+          if (c.restock) {
+            const badge = document.createElement('span');
+            badge.className = 'restock-badge';
+            badge.textContent = '↻ restock often';
+            li.appendChild(badge);
+          }
+          ul.appendChild(li);
+        });
+        consWrap.appendChild(ul);
+      } else {
+        const p = document.createElement('p');
+        p.className = 'proc-text proc-empty';
+        p.textContent = 'None listed.';
+        consWrap.appendChild(p);
+      }
+      details.appendChild(consWrap);
+
       body.appendChild(details);
     });
+  }
+
+  // ---------- string helpers ----------
+  function nodeStringIndices(project, nodeId) {
+    const set = new Set();
+    project.connections.forEach((c) => {
+      if ((c.a === nodeId || c.b === nodeId) && typeof c.string === 'number') set.add(c.string);
+    });
+    return [...set];
+  }
+
+  // ---------- map text annotations ----------
+  function openTextEditor(annotId, x, y) {
+    const project = getActiveProject();
+    if (!project || !canEdit()) return;
+    editingAnnotId = annotId;
+    const existing = annotId ? (project.annotations || []).find((a) => a.id === annotId) : null;
+    if (!existing && annotId) return;
+
+    document.getElementById('text-input').value = existing ? existing.text : '';
+    const curSize = existing ? existing.size : ANNOT_SIZES[1].size;
+    const sel = document.getElementById('text-size');
+    sel.innerHTML = '';
+    ANNOT_SIZES.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = String(s.size);
+      opt.textContent = `${s.label} (${s.key})`;
+      if (s.size === curSize) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    // stash target world position for a new annotation
+    editorAnnotPos = existing ? { x: existing.x, y: existing.y } : { x, y };
+    document.getElementById('text-delete').classList.toggle('hidden', !existing);
+    document.getElementById('text-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('text-input').focus(), 30);
+  }
+
+  let editorAnnotPos = null;
+
+  function saveTextEditor() {
+    const project = getActiveProject();
+    if (!project || !canEdit()) return;
+    const text = document.getElementById('text-input').value.trim();
+    const size = Number(document.getElementById('text-size').value) || 30;
+    if (!text) { closeTextEditor(); return; }
+    project.annotations = project.annotations || [];
+    if (editingAnnotId) {
+      const a = project.annotations.find((an) => an.id === editingAnnotId);
+      if (a) { a.text = text; a.size = size; }
+    } else if (editorAnnotPos) {
+      project.annotations.push({ id: uid(), x: editorAnnotPos.x, y: editorAnnotPos.y, text, size });
+    }
+    touchAndSave();
+    closeTextEditor();
+    renderCanvas();
+  }
+
+  function deleteTextEditor() {
+    const project = getActiveProject();
+    if (!project || !editingAnnotId) return;
+    project.annotations = (project.annotations || []).filter((a) => a.id !== editingAnnotId);
+    touchAndSave();
+    closeTextEditor();
+    renderCanvas();
+  }
+
+  function closeTextEditor() {
+    editingAnnotId = null;
+    editorAnnotPos = null;
+    document.getElementById('text-modal').classList.add('hidden');
+  }
+
+  // ---------- day planner ----------
+  const DAYPLAN_KEY = 'worksite-tracker:dayplan';
+
+  function loadDayPlan() {
+    try { return JSON.parse(localStorage.getItem(DAYPLAN_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function saveDayPlan(plan) {
+    localStorage.setItem(DAYPLAN_KEY, JSON.stringify(plan));
+  }
+
+  function openDayPlan() {
+    renderDayPlan();
+    document.getElementById('dayplan-modal').classList.remove('hidden');
+  }
+
+  function renderDayPlan() {
+    const project = getActiveProject();
+    const plan = loadDayPlan();
+    const selEl = document.getElementById('dayplan-select');
+    selEl.innerHTML = '';
+
+    const items = [
+      ...project.categories.map((c) => ({ ...c, group: 'Main' })),
+      ...project.microVars.map((c) => ({ ...c, group: 'Secondary' })),
+    ];
+    items.forEach((item) => {
+      const row = document.createElement('label');
+      row.className = 'dayplan-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!plan[item.id];
+      cb.addEventListener('change', () => {
+        const p = loadDayPlan();
+        if (cb.checked) p[item.id] = true; else delete p[item.id];
+        saveDayPlan(p);
+        renderDayPlan();
+      });
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = item.color;
+      const name = document.createElement('span');
+      name.textContent = item.name;
+      row.append(cb, dot, name);
+      selEl.appendChild(row);
+    });
+
+    // aggregate tools & consumables from selected tasks
+    const selectedIds = items.filter((it) => plan[it.id]).map((it) => it.id);
+    const outEl = document.getElementById('dayplan-output');
+    outEl.innerHTML = '';
+    if (!selectedIds.length) {
+      outEl.innerHTML = '<p class="hint">Select today\'s tasks above to build your tools & consumables list.</p>';
+      return;
+    }
+
+    const toolsTexts = [];
+    const ppeTexts = [];
+    const consumables = [];
+    selectedIds.forEach((id) => {
+      const proc = project.procedures[id];
+      if (!proc) return;
+      if (proc.tools && proc.tools.trim()) toolsTexts.push(proc.tools.trim());
+      if (proc.ppe && proc.ppe.trim()) ppeTexts.push(proc.ppe.trim());
+      (proc.consumables || []).forEach((c) => {
+        if (c && c.name) consumables.push(c);
+      });
+    });
+
+    // consumables: restock ones first & highlighted
+    const seen = new Map();
+    consumables.forEach((c) => {
+      const key = c.name.trim().toLowerCase();
+      const cur = seen.get(key) || { name: c.name.trim(), restock: false };
+      cur.restock = cur.restock || !!c.restock;
+      seen.set(key, cur);
+    });
+    const consList = [...seen.values()].sort((a, b) => (b.restock - a.restock) || a.name.localeCompare(b.name));
+
+    if (consList.length) {
+      const h = document.createElement('h4');
+      h.textContent = 'Consumables to prepare';
+      outEl.appendChild(h);
+      const ul = document.createElement('ul');
+      ul.className = 'consumable-list';
+      consList.forEach((c) => {
+        const li = document.createElement('li');
+        li.className = c.restock ? 'restock' : '';
+        li.textContent = c.name;
+        if (c.restock) {
+          const badge = document.createElement('span');
+          badge.className = 'restock-badge';
+          badge.textContent = '↻ restock often';
+          li.appendChild(badge);
+        }
+        ul.appendChild(li);
+      });
+      outEl.appendChild(ul);
+    }
+
+    if (toolsTexts.length) {
+      const h = document.createElement('h4');
+      h.textContent = 'Tools & notes';
+      outEl.appendChild(h);
+      const p = document.createElement('p');
+      p.className = 'proc-text';
+      p.textContent = toolsTexts.join('\n');
+      outEl.appendChild(p);
+    }
+    if (ppeTexts.length) {
+      const h = document.createElement('h4');
+      h.textContent = 'PPE & trainings';
+      outEl.appendChild(h);
+      const p = document.createElement('p');
+      p.className = 'proc-text';
+      p.textContent = ppeTexts.join('\n');
+      outEl.appendChild(p);
+    }
+    if (!consList.length && !toolsTexts.length && !ppeTexts.length) {
+      outEl.innerHTML = '<p class="hint">No tools/consumables recorded yet for these tasks. An admin can fill them in the 📖 Method statements.</p>';
+    }
+  }
+
+  // ---------- paste WhatsApp recap → auto-fill ----------
+  function openPasteRecap() {
+    document.getElementById('paste-input').value = '';
+    document.getElementById('paste-result').textContent = '';
+    document.getElementById('paste-modal').classList.remove('hidden');
+  }
+
+  function normalizeName(s) {
+    return String(s).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  function applyRecapText(text) {
+    const project = getActiveProject();
+    if (!project || !canEdit()) return { applied: 0, foundations: 0, unknown: [] };
+
+    const nodeByLabel = {};
+    project.nodes.forEach((n) => { nodeByLabel[normalizeName(n.label)] = n; });
+    const catByName = {};
+    project.categories.forEach((c) => { catByName[normalizeName(c.name)] = c; });
+    const microByName = {};
+    project.microVars.forEach((c) => { microByName[normalizeName(c.name)] = c; });
+    const reportByName = {};
+    project.reportTypes.forEach((r) => { reportByName[normalizeName(r.name)] = r; });
+
+    let current = null;
+    let applied = 0;
+    const touchedFoundations = new Set();
+    const unknown = [];
+
+    text.split(/\r?\n/).forEach((rawLine) => {
+      const line = rawLine.trim();
+      if (!line) return;
+
+      // foundation header: "■ FOU → G04" (tolerant of bullets/arrows)
+      const head = line.match(/(?:fou)\s*[→\->:]+\s*([A-Za-z]\s*0?\d{1,2})/i)
+        || line.match(/^[■▪●◦*-]?\s*([A-M]0\d)\b/i);
+      if (head && /fou|■|▪|●/i.test(line)) {
+        const lbl = normalizeName(head[1].replace(/\s+/g, ''));
+        const padded = lbl.length === 2 ? `${lbl[0]}0${lbl[1]}` : lbl;
+        current = nodeByLabel[padded] || nodeByLabel[lbl] || null;
+        if (current) touchedFoundations.add(current.id);
+        return;
+      }
+
+      // task line: "- <task name> → ✅ / ◧ / ×N"
+      const taskMatch = line.match(/^[-•*]?\s*(.+?)\s*(?:→|->|:)\s*(.+)$/);
+      if (!taskMatch || !current) return;
+      let name = taskMatch[1].trim();
+      const result = taskMatch[2].trim();
+
+      // strip a trailing "×N" occurrence count for reports
+      let occ = 1;
+      const occMatch = name.match(/[×x]\s*(\d+)\s*$/);
+      if (occMatch) { occ = parseInt(occMatch[1], 10) || 1; name = name.replace(/[×x]\s*\d+\s*$/, '').trim(); }
+
+      const key = normalizeName(name);
+      const partial = /◧|partial|partiel/i.test(result);
+      const done = /✅|✓|done|ok|fait/i.test(result) || partial;
+      if (!done) return;
+
+      if (catByName[key]) {
+        current.status[catByName[key].id] = checkStamp(partial);
+        applied += 1;
+      } else if (microByName[key]) {
+        current.micro[microByName[key].id] = checkStamp(partial);
+        applied += 1;
+      } else if (reportByName[key]) {
+        const rid = reportByName[key].id;
+        current.reports[rid] = (current.reports[rid] || []).concat(
+          Array.from({ length: occ }, () => checkStamp()),
+        );
+        applied += 1;
+      } else {
+        unknown.push(name);
+      }
+    });
+
+    if (applied) { touchAndSave(); render(); }
+    return { applied, foundations: touchedFoundations.size, unknown };
   }
 
   // ---------- drawers (mobile) ----------
@@ -2216,6 +2902,61 @@
 
     document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
 
+    // add map text annotation (editor)
+    document.getElementById('btn-add-text').addEventListener('click', () => {
+      if (!canEdit()) return;
+      placingText = !placingText;
+      svgEl.classList.toggle('placing', placingText);
+      document.getElementById('btn-add-text').classList.toggle('active', placingText);
+      if (placingText) showToast('Tap the map where you want the note.');
+    });
+    document.getElementById('text-save').addEventListener('click', saveTextEditor);
+    document.getElementById('text-cancel').addEventListener('click', closeTextEditor);
+    document.getElementById('text-delete').addEventListener('click', deleteTextEditor);
+
+    // day planner
+    document.getElementById('btn-dayplan').addEventListener('click', openDayPlan);
+    document.getElementById('dayplan-close').addEventListener('click', () => {
+      document.getElementById('dayplan-modal').classList.add('hidden');
+    });
+    document.getElementById('dayplan-clear').addEventListener('click', () => {
+      saveDayPlan({});
+      renderDayPlan();
+    });
+
+    // add report type (admin)
+    document.getElementById('btn-add-report').addEventListener('click', () => {
+      if (!isAdmin()) return;
+      const project = getActiveProject();
+      const name = prompt('New inspection / report name', '');
+      if (name === null || !name.trim()) return;
+      project.reportTypes.push({ id: uid(), name: name.trim() });
+      touchAndSave();
+      render();
+    });
+
+    // paste WhatsApp recap → auto-fill
+    document.getElementById('btn-paste-recap').addEventListener('click', () => {
+      if (!canEdit()) return;
+      openPasteRecap();
+    });
+    document.getElementById('paste-close').addEventListener('click', () => {
+      document.getElementById('paste-modal').classList.add('hidden');
+    });
+    document.getElementById('paste-apply').addEventListener('click', () => {
+      const text = document.getElementById('paste-input').value;
+      const res = applyRecapText(text);
+      const resultEl = document.getElementById('paste-result');
+      if (!res.applied) {
+        resultEl.textContent = 'Nothing matched. Check the foundation names (e.g. G04) and task names match the app.';
+      } else {
+        let msg = `✓ ${res.applied} task(s) filled across ${res.foundations} foundation(s).`;
+        if (res.unknown.length) msg += `\nUnrecognised: ${[...new Set(res.unknown)].join(', ')}`;
+        resultEl.textContent = msg;
+        showToast(`Filled ${res.applied} task(s) from the recap.`);
+      }
+    });
+
     document.getElementById('btn-procedures').addEventListener('click', () => {
       renderProcedures();
       document.getElementById('proc-modal').classList.remove('hidden');
@@ -2231,11 +2972,26 @@
     document.getElementById('btn-export').addEventListener('click', () => {
       const project = getActiveProject();
       if (!project) return;
-      const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+      // human-readable export: a legend (id → name) + a readme are added on
+      // top of the raw project so the JSON can be read/edited by hand or by a
+      // future version of the app. Extra keys are ignored on import.
+      const legend = {};
+      project.categories.concat(project.microVars).forEach((c) => { legend[c.id] = c.name; });
+      const reportLegend = {};
+      project.reportTypes.forEach((r) => { reportLegend[r.id] = r.name; });
+      const readable = {
+        _readme: 'treFOU project export. Tasks are referenced by id inside nodes.status / nodes.micro / nodes.reports; use _legend and _reportLegend below to read the ids. Each task value is null (not done) or {at,by,partial?}. Re-import this file to merge it back (most recent state per task wins).',
+        _exportedAt: new Date().toISOString(),
+        _legend: legend,
+        _reportLegend: reportLegend,
+        ...project,
+      };
+      const blob = new Blob([JSON.stringify(readable, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${project.name.replace(/[^a-z0-9]+/gi, '_')}.json`;
+      const dateTag = new Date().toISOString().slice(0, 10);
+      a.download = `${project.name.replace(/[^a-z0-9]+/gi, '_')}_${dateTag}.json`;
       a.click();
       URL.revokeObjectURL(url);
       markExported();
@@ -2290,10 +3046,17 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (!document.getElementById('proc-modal').classList.contains('hidden')) {
-        document.getElementById('proc-modal').classList.add('hidden');
+      const overlays = ['text-modal', 'paste-modal', 'dayplan-modal', 'proc-modal'];
+      const openOverlay = overlays.find((id) => !document.getElementById(id).classList.contains('hidden'));
+      if (openOverlay) {
+        if (openOverlay === 'text-modal') closeTextEditor();
+        else document.getElementById(openOverlay).classList.add('hidden');
       } else if (!document.getElementById('node-modal').classList.contains('hidden')) {
         closeModalAndRender();
+      } else if (placingText) {
+        placingText = false;
+        svgEl.classList.remove('placing');
+        document.getElementById('btn-add-text').classList.remove('active');
       } else if (document.getElementById('panel-left').classList.contains('open')
         || document.getElementById('panel-right').classList.contains('open')) {
         closeDrawers();
