@@ -27,8 +27,8 @@
 
   // ---------- farm layout ----------
   // Foundation grid (letter column A–M, no I, numeric row 1–7), validated
-  // against the reference cable map: K03 does not exist; K01 does (cable
-  // WT154 L1-K1). Labels are zero-padded (A02, K01…).
+  // against the official coordinates spreadsheet (Fondations_OWF.xlsx):
+  // no J02 nor K03; K01 and L03 exist. Labels are zero-padded (A02, K01…).
   const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M'];
   const COLUMN_ROWS = {
     A: [2, 3, 4],
@@ -39,9 +39,9 @@
     F: [1, 2, 5, 6, 7],
     G: [1, 2, 4, 5, 6, 7],
     H: [1, 2, 4, 5, 6, 7],
-    J: [1, 2, 4, 5, 6, 7],
+    J: [1, 4, 5, 6, 7],
     K: [1, 4, 5, 6, 7],
-    L: [1, 2, 4, 5, 6, 7],
+    L: [1, 2, 3, 4, 5, 6, 7],
     M: [1, 2, 3, 4, 5, 6, 7],
   };
 
@@ -60,10 +60,99 @@
     ['OSS', 'K04'], ['K04', 'J04'], ['J04', 'J05'], ['J05', 'H05'], ['H05', 'G05'], ['G05', 'F05'], ['F05', 'E05'], ['E05', 'D05'],
     ['OSS', 'G04'], ['G04', 'E04'], ['E04', 'D04'], ['D04', 'C04'], ['C04', 'B04'], ['B04', 'A04'], ['A04', 'A03'], ['A03', 'A02'],
     ['OSS', 'H04'], ['H04', 'E03'], ['E03', 'D03'], ['D03', 'C03'], ['C03', 'B03'], ['B03', 'B02'], ['C03', 'C02'], ['E03', 'E02'],
-    ['OSS', 'J01'], ['J01', 'J02'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['H01', 'G01'], ['G01', 'F01'], ['F01', 'E01'],
+    ['OSS', 'J01'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['H01', 'G01'], ['G01', 'F01'], ['F01', 'E01'],
     ['OSS', 'L04'], ['L04', 'L05'], ['L05', 'L06'], ['L06', 'L07'], ['L07', 'M07'], ['L04', 'M04'], ['L05', 'M05'], ['L06', 'M06'],
-    ['OSS', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L01', 'M01'], ['L02', 'M02'], ['M02', 'M03'],
+    ['OSS', 'L03'], ['L03', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L03', 'M03'], ['L02', 'M02'], ['L01', 'M01'],
   ];
+
+  const LAYOUT_VERSION = 2;
+
+  // Real WGS84 positions of every foundation and the OSS, from the official
+  // coordinates spreadsheet: label -> [lat, lon, DMS string].
+  const COORDS = {
+    "A02": [50.088528, 1.06775, "50\u00b005'18.7\"N 1\u00b004'03.9\"E"],
+    "A03": [50.095778, 1.056861, "50\u00b005'44.8\"N 1\u00b003'24.7\"E"],
+    "A04": [50.103194, 1.046222, "50\u00b006'11.5\"N 1\u00b002'46.4\"E"],
+    "B02": [50.096639, 1.080972, "50\u00b005'47.9\"N 1\u00b004'51.5\"E"],
+    "B03": [50.104, 1.070444, "50\u00b006'14.4\"N 1\u00b004'13.6\"E"],
+    "B04": [50.111056, 1.059028, "50\u00b006'39.8\"N 1\u00b003'32.5\"E"],
+    "C02": [50.104694, 1.094278, "50\u00b006'16.9\"N 1\u00b005'39.4\"E"],
+    "C03": [50.112306, 1.083417, "50\u00b006'44.3\"N 1\u00b005'00.3\"E"],
+    "C04": [50.1194, 1.07288, "50\u00b007'09.8\"N 1\u00b004'22.4\"E"],
+    "D03": [50.120083, 1.096889, "50\u00b007'12.3\"N 1\u00b005'48.8\"E"],
+    "D04": [50.1275, 1.086028, "50\u00b007'39.0\"N 1\u00b005'09.7\"E"],
+    "D05": [50.135028, 1.074472, "50\u00b008'06.1\"N 1\u00b004'28.1\"E"],
+    "D06": [50.1421, 1.06344, "50\u00b008'31.6\"N 1\u00b003'48.4\"E"],
+    "D07": [50.149528, 1.053667, "50\u00b008'58.3\"N 1\u00b003'13.2\"E"],
+    "E01": [50.113472, 1.131139, "50\u00b006'48.5\"N 1\u00b007'52.1\"E"],
+    "E02": [50.1207, 1.12086, "50\u00b007'14.5\"N 1\u00b007'15.1\"E"],
+    "E03": [50.128861, 1.110028, "50\u00b007'43.9\"N 1\u00b006'36.1\"E"],
+    "E04": [50.1355, 1.099278, "50\u00b008'07.8\"N 1\u00b005'57.4\"E"],
+    "E05": [50.142778, 1.088611, "50\u00b008'34.0\"N 1\u00b005'19.0\"E"],
+    "E06": [50.150267, 1.077806, "50\u00b009'01.0\"N 1\u00b004'40.1\"E"],
+    "E07": [50.157206, 1.067481, "50\u00b009'25.9\"N 1\u00b004'02.9\"E"],
+    "F01": [50.121306, 1.144861, "50\u00b007'16.7\"N 1\u00b008'41.5\"E"],
+    "F02": [50.128806, 1.134194, "50\u00b007'43.7\"N 1\u00b008'03.1\"E"],
+    "F05": [50.150972, 1.102194, "50\u00b009'03.5\"N 1\u00b006'07.9\"E"],
+    "F06": [50.157991, 1.091016, "50\u00b009'28.8\"N 1\u00b005'27.7\"E"],
+    "F07": [50.165639, 1.080278, "50\u00b009'56.3\"N 1\u00b004'49.0\"E"],
+    "G01": [50.129611, 1.158028, "50\u00b007'46.6\"N 1\u00b009'28.9\"E"],
+    "G02": [50.136806, 1.147417, "50\u00b008'12.5\"N 1\u00b008'50.7\"E"],
+    "G04": [50.1516, 1.12598, "50\u00b009'05.8\"N 1\u00b007'33.5\"E"],
+    "G05": [50.159033, 1.115131, "50\u00b009'32.5\"N 1\u00b006'54.5\"E"],
+    "G06": [50.166556, 1.1045, "50\u00b009'59.6\"N 1\u00b006'16.2\"E"],
+    "G07": [50.173446, 1.093942, "50\u00b010'24.4\"N 1\u00b005'38.2\"E"],
+    "H01": [50.1375, 1.171417, "50\u00b008'15.0\"N 1\u00b010'17.1\"E"],
+    "H02": [50.144861, 1.160639, "50\u00b008'41.5\"N 1\u00b009'38.3\"E"],
+    "H04": [50.159628, 1.139278, "50\u00b009'34.7\"N 1\u00b008'21.4\"E"],
+    "H05": [50.166861, 1.128278, "50\u00b010'00.7\"N 1\u00b007'41.8\"E"],
+    "H06": [50.1737, 1.11691, "50\u00b010'25.3\"N 1\u00b007'00.9\"E"],
+    "H07": [50.181694, 1.106778, "50\u00b010'54.1\"N 1\u00b006'24.4\"E"],
+    "J01": [50.145806, 1.185167, "50\u00b008'44.9\"N 1\u00b011'06.6\"E"],
+    "J04": [50.167667, 1.1525, "50\u00b010'03.6\"N 1\u00b009'09.0\"E"],
+    "J05": [50.174972, 1.141667, "50\u00b010'29.9\"N 1\u00b008'30.0\"E"],
+    "J06": [50.182661, 1.13106, "50\u00b010'57.6\"N 1\u00b007'51.8\"E"],
+    "J07": [50.189694, 1.119972, "50\u00b011'22.9\"N 1\u00b007'11.9\"E"],
+    "K01": [50.1536, 1.19796, "50\u00b009'13.0\"N 1\u00b011'52.7\"E"],
+    "K04": [50.175694, 1.165917, "50\u00b010'32.5\"N 1\u00b009'57.3\"E"],
+    "K05": [50.1831, 1.15509, "50\u00b010'59.2\"N 1\u00b009'18.3\"E"],
+    "K06": [50.190362, 1.144129, "50\u00b011'25.3\"N 1\u00b008'38.9\"E"],
+    "K07": [50.197806, 1.133361, "50\u00b011'52.1\"N 1\u00b008'00.1\"E"],
+    "L01": [50.161925, 1.211712, "50\u00b009'42.9\"N 1\u00b012'42.2\"E"],
+    "L02": [50.1691, 1.20074, "50\u00b010'08.8\"N 1\u00b012'02.7\"E"],
+    "L03": [50.175988, 1.19026, "50\u00b010'33.6\"N 1\u00b011'24.9\"E"],
+    "L04": [50.183694, 1.179139, "50\u00b011'01.3\"N 1\u00b010'44.9\"E"],
+    "L05": [50.191139, 1.168056, "50\u00b011'28.1\"N 1\u00b010'05.0\"E"],
+    "L06": [50.197917, 1.15725, "50\u00b011'52.5\"N 1\u00b009'26.1\"E"],
+    "L07": [50.205833, 1.146889, "50\u00b012'21.0\"N 1\u00b008'48.8\"E"],
+    "M01": [50.169639, 1.224556, "50\u00b010'10.7\"N 1\u00b013'28.4\"E"],
+    "M02": [50.177, 1.21392, "50\u00b010'37.2\"N 1\u00b012'50.1\"E"],
+    "M03": [50.1844, 1.20314, "50\u00b011'03.8\"N 1\u00b012'11.3\"E"],
+    "M04": [50.192, 1.192333, "50\u00b011'31.2\"N 1\u00b011'32.4\"E"],
+    "M05": [50.199222, 1.181528, "50\u00b011'57.2\"N 1\u00b010'53.5\"E"],
+    "M06": [50.206472, 1.170722, "50\u00b012'23.3\"N 1\u00b010'14.6\"E"],
+    "M07": [50.213806, 1.159722, "50\u00b012'49.7\"N 1\u00b009'35.0\"E"],
+    "OSS": [50.1797, 1.17252, "50\u00b010'46.9\"N 1\u00b010'21.1\"E"],
+  };
+
+  // local equirectangular projection around the farm centre (north stays up)
+  const GEO_REF = { lat: 50.15, lon: 1.12 };
+  const M_PER_DEG_LAT = 111200;
+  const M_PER_DEG_LON = 111320 * Math.cos((GEO_REF.lat * Math.PI) / 180);
+  const WORLD_PER_M = 0.18;
+
+  function geoToWorld(lat, lon) {
+    return {
+      x: (lon - GEO_REF.lon) * M_PER_DEG_LON * WORLD_PER_M,
+      y: -(lat - GEO_REF.lat) * M_PER_DEG_LAT * WORLD_PER_M,
+    };
+  }
+
+  function nodePosition(label, colIndex, row) {
+    const c = COORDS[label];
+    if (c) return geoToWorld(c[0], c[1]);
+    return gridToWorld(colIndex, row);
+  }
 
   let state = null;
   let user = null; // { name, role: 'tech'|'visitor', admin: bool }
@@ -328,32 +417,80 @@
       (p) => !p.deleted || new Date(p.updatedAt || 0).getTime() > cutoff,
     );
     (project.nodes || []).forEach((n) => normalizeNode(n, project));
-    // the OSS position is derived data: keep it pinned between K04 and L04
-    const oss = (project.nodes || []).find((n) => n.substation);
-    if (oss) {
-      const pos = ossPosition();
-      oss.x = pos.x;
-      oss.y = pos.y;
+
+    // one-shot layout migration: grid corrected against the official
+    // spreadsheet (J02 removed, L03 added), cables rebuilt, brand colors
+    if ((project.layoutVersion || 0) < LAYOUT_VERSION) {
+      project.nodes = project.nodes.filter((n) => n.label !== 'J02');
+      if (!project.nodes.some((n) => n.label === 'L03')) {
+        const l03 = {
+          id: uid(),
+          label: 'L03',
+          x: 0,
+          y: 0,
+          status: {},
+          micro: {},
+          taskComments: {},
+          reports: {},
+          issue: false,
+          note: '',
+        };
+        normalizeNode(l03, project);
+        project.nodes.push(l03);
+      }
+      const byLabel = {};
+      project.nodes.forEach((n) => { byLabel[n.label] = n; });
+      project.connections = [];
+      STRING_EDGES.forEach(([a, b]) => {
+        if (byLabel[a] && byLabel[b]) project.connections.push({ id: uid(), a: byLabel[a].id, b: byLabel[b].id });
+      });
+      const brandColors = {
+        'Tower cabinet rust treatment & rubber placement': '#274A72',
+        'ScotchKoat on earthing cable': '#0085AD',
+        'Grating repair with G8 resin': '#6BA539',
+        'Installed cable tray brackets': '#AECB54',
+        'Safety pin gate': '#F59E0B',
+        'Hang off platform: caution sign': '#8A5CB8',
+        'Pick up keys': '#51B2D1',
+        'Water ingress check': '#C4453C',
+      };
+      project.categories.concat(project.microVars).forEach((item) => {
+        if (brandColors[item.name]) item.color = brandColors[item.name];
+      });
+      project.layoutVersion = LAYOUT_VERSION;
     }
+
+    // positions are derived data: pin every known point to its real
+    // geographic location (north up)
+    (project.nodes || []).forEach((n) => {
+      const c = COORDS[n.label];
+      if (c) {
+        const pos = geoToWorld(c[0], c[1]);
+        n.x = pos.x;
+        n.y = pos.y;
+      }
+    });
     return project;
   }
 
   function seedWindFarmProject() {
     const project = createEmptyProject('Dieppe Le Tréport — 62 FOU');
 
+    project.layoutVersion = LAYOUT_VERSION;
+
     const catDefs = [
-      { name: 'Tower cabinet rust treatment & rubber placement', color: '#111827' },
-      { name: 'ScotchKoat on earthing cable', color: '#db2777' },
-      { name: 'Grating repair with G8 resin', color: '#16a34a' },
-      { name: 'Installed cable tray brackets', color: '#2563eb' },
+      { name: 'Tower cabinet rust treatment & rubber placement', color: '#274A72' },
+      { name: 'ScotchKoat on earthing cable', color: '#0085AD' },
+      { name: 'Grating repair with G8 resin', color: '#6BA539' },
+      { name: 'Installed cable tray brackets', color: '#AECB54' },
     ];
     project.categories = catDefs.map((c) => ({ id: uid(), ...c }));
 
     const microDefs = [
-      { name: 'Safety pin gate', color: '#f59e0b' },
-      { name: 'Hang off platform: caution sign', color: '#7c3aed' },
-      { name: 'Pick up keys', color: '#0891b2' },
-      { name: 'Water ingress check', color: '#dc2626' },
+      { name: 'Safety pin gate', color: '#F59E0B' },
+      { name: 'Hang off platform: caution sign', color: '#8A5CB8' },
+      { name: 'Pick up keys', color: '#51B2D1' },
+      { name: 'Water ingress check', color: '#C4453C' },
     ];
     project.microVars = microDefs.map((c) => ({ id: uid(), ...c }));
 
@@ -361,10 +498,11 @@
 
     COLS.forEach((col, colIndex) => {
       (COLUMN_ROWS[col] || []).forEach((row) => {
-        const pos = gridToWorld(colIndex, row);
+        const label = fouLabel(col, row);
+        const pos = nodePosition(label, colIndex, row);
         const node = {
           id: uid(),
-          label: fouLabel(col, row),
+          label,
           x: pos.x,
           y: pos.y,
           status: {},
@@ -380,9 +518,8 @@
       });
     });
 
-    // offshore substation (OSS) — halfway between K04 and L04, not one of
-    // the 62 foundations.
-    const ossPos = ossPosition();
+    // offshore substation (OSS) — real position, not one of the 62 foundations
+    const ossPos = geoToWorld(COORDS.OSS[0], COORDS.OSS[1]);
     project.nodes.push({
       id: uid(),
       label: 'OSS',
@@ -810,13 +947,6 @@
       x: (colIndex - row) * GRID_UNIT,
       y: -(colIndex + row) * GRID_UNIT,
     };
-  }
-
-  // OSS sits halfway between K04 and L04
-  function ossPosition() {
-    const k04 = gridToWorld(COLS.indexOf('K'), 4);
-    const l04 = gridToWorld(COLS.indexOf('L'), 4);
-    return { x: (k04.x + l04.x) / 2, y: (k04.y + l04.y) / 2 };
   }
 
   // ---------- mutations ----------
@@ -1283,9 +1413,19 @@
         rect.setAttribute('data-kind', 'hub');
         g.appendChild(rect);
 
+        const bolt = document.createElementNS(SVGNS, 'image');
+        bolt.setAttribute('href', 'assets/pictos/picto_eclair.png');
+        bolt.setAttribute('x', String(-size * 0.22));
+        bolt.setAttribute('y', String(-size * 0.42));
+        bolt.setAttribute('width', String(size * 0.44));
+        bolt.setAttribute('height', String(size * 0.62));
+        bolt.setAttribute('class', 'substation-icon-img');
+        bolt.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        g.appendChild(bolt);
+
         const ossLabel = document.createElementNS(SVGNS, 'text');
         ossLabel.setAttribute('x', '0');
-        ossLabel.setAttribute('y', '4');
+        ossLabel.setAttribute('y', String(size / 2 - 5));
         ossLabel.setAttribute('text-anchor', 'middle');
         ossLabel.setAttribute('class', 'substation-label');
         ossLabel.textContent = node.label;
@@ -1659,6 +1799,17 @@
     const labelInput = document.getElementById('modal-label');
     labelInput.value = node.label;
     labelInput.disabled = !isAdmin();
+
+    // discreet geographic coordinates + Google Maps link
+    const geoEl = document.getElementById('modal-geo');
+    const coords = COORDS[node.label];
+    if (coords) {
+      geoEl.innerHTML = `<span>${escapeHtml(coords[2])}</span>`
+        + ` · <a href="https://www.google.com/maps/search/?api=1&query=${coords[0]},${coords[1]}" target="_blank" rel="noopener">📍 Google Maps</a>`;
+      geoEl.classList.remove('hidden');
+    } else {
+      geoEl.classList.add('hidden');
+    }
     document.getElementById('modal-issue').checked = !!node.issue;
     const noteEl = document.getElementById('modal-note');
     noteEl.value = node.note || '';
