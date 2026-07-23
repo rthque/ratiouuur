@@ -16,7 +16,13 @@ Static web app (no backend) to track BOP works progress across the 62 foundation
 - **24h recap for WhatsApp** — one click copies a `■ FOU → X07` formatted summary of everything done in the last 24 hours (per foundation or farm-wide), ready to paste in the tracking channel.
 - **CSV backup** — one click downloads a full Excel-compatible export (every task, state, date, author, comment, report occurrence). Note: automatic daily e-mails are not possible from a fully static site; use the CSV/JSON export buttons (a scheduled backup service can be added later if a backend becomes available).
 - **Punch list** and per-category **progress bars**.
-- Mobile-first: on phone/tablet the editing chrome disappears, the map takes the full screen.
+- **8 inter-array strings** numbered S1–S8; any string can be flagged **SRCC** (restricted): its cable turns red and a restricted-access reminder is shown on the string panel and on every foundation of that string.
+- **Map notes**: place free text anywhere on the map at four sizes — small notes only show when zoomed in, large ones stay readable zoomed out (to signal a crane, spare equipment, etc.).
+- **Today's tasks & kit**: pick the day's tasks to get the aggregated tools & consumables to prepare, with recurring consumables to restock highlighted.
+- **Hide/archive categories** to declutter the map while keeping their history.
+- **Bulk-validate** a category across all 62 foundations in one click (admin).
+- **Paste a WhatsApp recap** (`■ FOU → G04` / `- Task → ✅`) to auto-tick the matching tasks on the map.
+- Mobile-first: on phone/tablet the editing chrome disappears, the map takes the full screen; pinch-zoom is stable and the farm always fills the screen.
 
 Data is stored in the browser (`localStorage`). Use **Export/Import** to move a project between devices.
 

@@ -66,11 +66,27 @@
         <button id="btn-add-micro" class="btn btn-primary btn-block admin-only">+ Add category</button>
       </section>
       <section>
+        <h2>Strings (SRCC)</h2>
+        <p class="hint">Set a string as SRCC to colour its cable red and remind everyone of the restricted access rules.</p>
+        <ul id="string-list" class="string-list"></ul>
+        <div id="string-rules" class="string-rules hidden">
+          <h4>Access rules when SRCC</h4>
+          <div id="string-rules-body"></div>
+        </div>
+      </section>
+      <section>
+        <h2>Additional inspections</h2>
+        <p class="hint">Repeatable reports counted per foundation.</p>
+        <ul id="reports-list" class="category-list"></ul>
+        <button id="btn-add-report" class="btn btn-primary btn-block admin-only">+ Add inspection</button>
+      </section>
+      <section>
         <h2>Legend</h2>
         <div class="legend-block">
           <div class="legend-item"><span class="legend-swatch" style="background:transparent;border:2px solid var(--line)"></span> Not done</div>
           <div class="legend-item"><span class="legend-swatch legend-hatch"></span> Partially done</div>
           <div class="legend-item"><span class="legend-x">✕</span> Blocking point</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#C4453C"></span> SRCC cable</div>
         </div>
       </section>
       <section id="admin-section" class="hidden">
@@ -98,6 +114,7 @@
     </div>
     <div class="canvas-scroll" id="canvas-scroll">
       <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      <button id="btn-add-text" class="btn canvas-fab editor-only" title="Add a text note on the map">✎ Note</button>
     </div>
   </section>
 
@@ -107,6 +124,13 @@
         <h2><img src="assets/pictos/picto_eolienne.png" alt="" class="h2-icon" /> Progress</h2>
         <div id="progress-overall" class="progress-overall"></div>
         <div id="progress-list" class="progress-list"></div>
+      </section>
+      <section>
+        <h2><img src="assets/pictos/picto_groupe.png" alt="" class="h2-icon" /> Prepare &amp; fill</h2>
+        <div class="stack-buttons">
+          <button id="btn-dayplan" class="btn btn-block">🧰 Today's tasks &amp; kit</button>
+          <button id="btn-paste-recap" class="btn btn-block editor-only">📥 Paste WhatsApp recap</button>
+        </div>
       </section>
       <section>
         <h2>Share &amp; backup</h2>
@@ -142,6 +166,7 @@
         <input id="modal-label" type="text" />
       </label>
       <div id="modal-geo" class="geo-line hidden"></div>
+      <div id="modal-srcc" class="srcc-reminder hidden"></div>
       <label class="field checkbox-field editor-only">
         <input id="modal-issue" type="checkbox" />
         <span>Blocking point (✕)</span>
@@ -184,6 +209,63 @@
       </div>
     </div>
     <div class="modal-body" id="proc-body"></div>
+  </div>
+</div>
+
+<div id="text-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>Map note</h3>
+      <button id="text-cancel" class="btn btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>Text (e.g. "Crane here", "Spare anodes stored")</span>
+        <input id="text-input" type="text" />
+      </label>
+      <label class="field">
+        <span>Size — small text only shows when zoomed in, large text stays visible zoomed out</span>
+        <select id="text-size"></select>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button id="text-delete" class="btn btn-danger hidden">Delete</button>
+      <button id="text-save" class="btn btn-primary">Save note</button>
+    </div>
+  </div>
+</div>
+
+<div id="dayplan-modal" class="modal-overlay hidden">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-header">
+      <h3>🧰 Today's tasks &amp; kit</h3>
+      <div class="modal-header-actions">
+        <button id="dayplan-clear" class="btn btn-ghost">Clear</button>
+        <button id="dayplan-close" class="btn btn-ghost">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p class="hint">Tick the tasks you plan to do today. The tools &amp; consumables to prepare are gathered below — items flagged <strong>↻ restock often</strong> are the ones to keep well stocked.</p>
+      <div id="dayplan-select" class="dayplan-select"></div>
+      <div id="dayplan-output" class="dayplan-output"></div>
+    </div>
+  </div>
+</div>
+
+<div id="paste-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>📥 Paste WhatsApp recap</h3>
+      <button id="paste-close" class="btn btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">Paste a recap block. Lines like <code>■ FOU → G04</code> then <code>- Task name → ✅</code> tick the matching tasks on the map automatically.</p>
+      <textarea id="paste-input" rows="10" placeholder="■ FOU → G04&#10;- Tower cabinet rust treatment &amp; rubber placement → ✅&#10;- Grating repair with G8 resin → ✅"></textarea>
+      <p id="paste-result" class="paste-result"></p>
+    </div>
+    <div class="modal-footer">
+      <button id="paste-apply" class="btn btn-primary">Fill the map</button>
+    </div>
   </div>
 </div>
 
