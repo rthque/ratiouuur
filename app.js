@@ -50,17 +50,26 @@
   }
 
   // 8 inter-array cable strings (numbered 1..8), each an ordered list of cable
-  // segments, read off the reference site map ("Dieppe Le Tréport"): the WT
-  // numbering walks each string outward from the OSS (empty L3 grid slot).
+  // segments, read off the reference site map by following the little black
+  // string numbers written along each red cable. Every string walks outward
+  // from the OSS (empty L3 grid slot). Membership (all 62 FOUs, once each):
+  //   S1: K04 J04 J05 H05 G05 F05 E05 D05   (8, "between D05 and K04")
+  //   S2: L04 L05 L06 L07 M07 M06 M05 M04   (8, upper L/M columns)
+  //   S3: K07 J07 H07 G07 F07 E07 D07       (7, row 7)
+  //   S4: K05 K06 J06 H06 G06 F06 E06 D06   (8, row 6 + K05)
+  //   S5: L03 L02 L01 K01 M01 M02 M03       (7, lower L/M columns)
+  //   S6: G04 E04 D04 C04 B04 A04 A03 A02   (8, west row 4 → A column)
+  //   S7: H04 E03 E02 D03 C03 C02 B03 B02   (8, south-west cluster)
+  //   S8: J01 H01 H02 G02 F02 G01 F01 E01   (8, row 1 + row 2 partial)
   const STRING_GROUPS = [
+    [['OSS', 'K04'], ['K04', 'J04'], ['J04', 'J05'], ['J05', 'H05'], ['H05', 'G05'], ['G05', 'F05'], ['F05', 'E05'], ['E05', 'D05']],
+    [['OSS', 'L04'], ['L04', 'L05'], ['L05', 'L06'], ['L06', 'L07'], ['L07', 'M07'], ['M07', 'M06'], ['M06', 'M05'], ['M05', 'M04']],
     [['OSS', 'K07'], ['K07', 'J07'], ['J07', 'H07'], ['H07', 'G07'], ['G07', 'F07'], ['F07', 'E07'], ['E07', 'D07']],
     [['OSS', 'K05'], ['K05', 'K06'], ['K06', 'J06'], ['J06', 'H06'], ['H06', 'G06'], ['G06', 'F06'], ['F06', 'E06'], ['E06', 'D06']],
-    [['OSS', 'K04'], ['K04', 'J04'], ['J04', 'J05'], ['J05', 'H05'], ['H05', 'G05'], ['G05', 'F05'], ['F05', 'E05'], ['E05', 'D05']],
+    [['OSS', 'L03'], ['L03', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L01', 'M01'], ['M01', 'M02'], ['M02', 'M03']],
     [['OSS', 'G04'], ['G04', 'E04'], ['E04', 'D04'], ['D04', 'C04'], ['C04', 'B04'], ['B04', 'A04'], ['A04', 'A03'], ['A03', 'A02']],
-    [['OSS', 'H04'], ['H04', 'E03'], ['E03', 'D03'], ['D03', 'C03'], ['C03', 'B03'], ['B03', 'B02'], ['C03', 'C02'], ['E03', 'E02']],
-    [['OSS', 'J01'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['H01', 'G01'], ['G01', 'F01'], ['F01', 'E01']],
-    [['OSS', 'L04'], ['L04', 'L05'], ['L05', 'L06'], ['L06', 'L07'], ['L07', 'M07'], ['L04', 'M04'], ['L05', 'M05'], ['L06', 'M06']],
-    [['OSS', 'L03'], ['L03', 'L02'], ['L02', 'L01'], ['L01', 'K01'], ['L03', 'M03'], ['L02', 'M02'], ['L01', 'M01']],
+    [['OSS', 'H04'], ['H04', 'E03'], ['E03', 'E02'], ['E03', 'D03'], ['D03', 'C03'], ['C03', 'C02'], ['C03', 'B03'], ['B03', 'B02']],
+    [['OSS', 'J01'], ['J01', 'H01'], ['H01', 'H02'], ['H02', 'G02'], ['G02', 'F02'], ['G02', 'G01'], ['G01', 'F01'], ['F01', 'E01']],
   ];
 
   const CABLE_COLOR = '#8A9AB0';
@@ -82,7 +91,7 @@
     { key: 'XL', label: 'Extra large', size: 90 },
   ];
 
-  const LAYOUT_VERSION = 3;
+  const LAYOUT_VERSION = 4;
 
   // Real WGS84 positions of every foundation and the OSS, from the official
   // coordinates spreadsheet: label -> [lat, lon, DMS string].
@@ -450,6 +459,7 @@
     project.punchList = project.punchList || [];
     project.procedures = project.procedures || {};
     project.annotations = project.annotations || [];
+    project.suggestions = project.suggestions || [];
     if (!Array.isArray(project.strings) || project.strings.length !== STRING_GROUPS.length) {
       project.strings = defaultStrings();
     }
@@ -756,6 +766,14 @@
       else { found.text = pickText(found.text, a.text); }
     });
 
+    // anonymous improvement suggestions: append-only union by id
+    target.suggestions = target.suggestions || [];
+    const sugById = new Set(target.suggestions.map((s) => s.id));
+    (incoming.suggestions || []).forEach((s) => {
+      if (s && s.id && !sugById.has(s.id)) { target.suggestions.push(s); sugById.add(s.id); }
+    });
+    target.suggestions.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+
     // hidden flags: keep whichever archived it (OR)
     incoming.categories.concat(incoming.microVars || []).forEach((ic) => {
       const tid = catMap[ic.id] || microMap[ic.id];
@@ -859,6 +877,7 @@
     (project.strings || []).forEach((s, i) => lines.push(`G|${i}|${s.srcc ? 1 : 0}`));
     lines.push(`A|${project.accessRules || ''}`);
     (project.annotations || []).forEach((an) => lines.push(`T|${an.id}|${an.text}|${an.size}|${Math.round(an.x)}|${Math.round(an.y)}`));
+    (project.suggestions || []).forEach((s) => lines.push(`U|${s.id}|${s.text}|${s.at || ''}`));
     Object.entries(project.procedures || {}).forEach(([id, proc]) => {
       if (!proc) return;
       const body = ['en', 'fr', 'tools', 'ppe'].map((k) => proc[k] || '').join('|');
@@ -1105,7 +1124,10 @@
       applyViewBox();
       return;
     }
-    const pad = RING_OUT + 40;
+    // Tight margin so that at maximum zoom-out the outermost foundations sit
+    // just a few millimetres from the screen edges (west→left, east→right,
+    // north→top, south→bottom). Only the node ring + a hair of breathing room.
+    const pad = RING_OUT + 10;
     const xs = project.nodes.map((n) => n.x);
     const ys = project.nodes.map((n) => n.y);
     const minX = Math.min(...xs) - pad;
@@ -1119,9 +1141,9 @@
       x: (minX + maxX) / 2,
       y: (minY + maxY) / 2,
       scale,
-      // never let the farm shrink below "just fits the screen" — a deep
-      // zoom-out used to make the whole park tiny.
-      minScale: scale * 0.92,
+      // max zoom-out == this tight fill: the whole park fills the screen edge
+      // to edge and cannot be shrunk any smaller.
+      minScale: scale,
       maxScale: Math.max(10, scale * 14),
     };
     applyViewBox();
@@ -2587,6 +2609,69 @@
     document.getElementById('paste-modal').classList.remove('hidden');
   }
 
+  // Anonymous improvement suggestions: anyone can write one (no name is ever
+  // attached); the collected list is only rendered for admins.
+  function openSuggest() {
+    document.getElementById('suggest-input').value = '';
+    document.getElementById('suggest-result').textContent = '';
+    renderSuggestions();
+    document.getElementById('suggest-modal').classList.remove('hidden');
+    document.getElementById('suggest-input').focus();
+  }
+
+  function renderSuggestions() {
+    const project = getActiveProject();
+    const list = project ? (project.suggestions || []) : [];
+    const countEl = document.getElementById('suggest-count');
+    if (countEl) countEl.textContent = String(list.length);
+    const ul = document.getElementById('suggest-list');
+    if (!ul) return;
+    ul.innerHTML = '';
+    if (!list.length) {
+      const li = document.createElement('li');
+      li.className = 'suggest-empty';
+      li.textContent = 'No suggestions yet.';
+      ul.appendChild(li);
+      return;
+    }
+    // newest first for readers
+    [...list].reverse().forEach((s) => {
+      const li = document.createElement('li');
+      li.className = 'suggest-item';
+      const when = s.at ? new Date(s.at).toLocaleDateString() : '';
+      li.innerHTML = `<span class="suggest-text">${escapeHtml(s.text)}</span>` +
+        (when ? `<span class="suggest-date">${escapeHtml(when)}</span>` : '') +
+        (isAdmin() ? '<button class="btn btn-ghost btn-danger suggest-del" title="Delete">🗑</button>' : '');
+      if (isAdmin()) {
+        li.querySelector('.suggest-del').addEventListener('click', () => {
+          project.suggestions = project.suggestions.filter((x) => x.id !== s.id);
+          touchAndSave();
+          renderSuggestions();
+        });
+      }
+      ul.appendChild(li);
+    });
+  }
+
+  function submitSuggestion() {
+    const project = getActiveProject();
+    if (!project) return;
+    const input = document.getElementById('suggest-input');
+    const text = (input.value || '').trim();
+    const resultEl = document.getElementById('suggest-result');
+    if (!text) {
+      resultEl.textContent = 'Please write something first.';
+      return;
+    }
+    project.suggestions = project.suggestions || [];
+    project.suggestions.push({ id: uid(), text, at: new Date().toISOString() });
+    touchAndSave();
+    input.value = '';
+    resultEl.textContent = '✓ Thank you! Your anonymous suggestion has been sent.';
+    showToast('💡 Suggestion sent anonymously.');
+    renderSuggestions();
+  }
+
   function normalizeName(s) {
     return String(s).toLowerCase().replace(/\s+/g, ' ').trim();
   }
@@ -2956,6 +3041,13 @@
         showToast(`Filled ${res.applied} task(s) from the recap.`);
       }
     });
+
+    // anonymous suggestions box (open to everyone; list is admin-only via CSS)
+    document.getElementById('btn-suggest').addEventListener('click', openSuggest);
+    document.getElementById('suggest-close').addEventListener('click', () => {
+      document.getElementById('suggest-modal').classList.add('hidden');
+    });
+    document.getElementById('suggest-send').addEventListener('click', submitSuggestion);
 
     document.getElementById('btn-procedures').addEventListener('click', () => {
       renderProcedures();

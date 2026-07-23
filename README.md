@@ -19,6 +19,7 @@ Static web app (no backend) to track BOP works progress across the 62 foundation
 - **8 inter-array strings** numbered S1–S8; any string can be flagged **SRCC** (restricted): its cable turns red and a restricted-access reminder is shown on the string panel and on every foundation of that string.
 - **Map notes**: place free text anywhere on the map at four sizes — small notes only show when zoomed in, large ones stay readable zoomed out (to signal a crane, spare equipment, etc.).
 - **Today's tasks & kit**: pick the day's tasks to get the aggregated tools & consumables to prepare, with recurring consumables to restock highlighted.
+- **Anonymous suggestions box** — a 💡 menu where anyone (including visitors) can write an improvement idea; no name is ever attached. The collected suggestions are only readable by admins (in admin mode), who can delete handled ones.
 - **Hide/archive categories** to declutter the map while keeping their history.
 - **Bulk-validate** a category across all 62 foundations in one click (admin).
 - **Paste a WhatsApp recap** (`■ FOU → G04` / `- Task → ✅`) to auto-tick the matching tasks on the map.

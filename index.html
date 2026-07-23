@@ -133,6 +133,13 @@
         </div>
       </section>
       <section>
+        <h2>💡 Suggestions</h2>
+        <div class="stack-buttons">
+          <button id="btn-suggest" class="btn btn-block">💡 Suggest an improvement</button>
+        </div>
+        <p class="suggest-hint">Anonymous. Only admins can read them.</p>
+      </section>
+      <section>
         <h2>Share &amp; backup</h2>
         <div class="stack-buttons">
           <button id="btn-recap-all" class="btn btn-block">📋 Copy 24h recap</button>
@@ -265,6 +272,27 @@
     </div>
     <div class="modal-footer">
       <button id="paste-apply" class="btn btn-primary">Fill the map</button>
+    </div>
+  </div>
+</div>
+
+<div id="suggest-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>💡 Suggest an improvement</h3>
+      <button id="suggest-close" class="btn btn-ghost">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">Write anything you'd like improved. Your message is <strong>anonymous</strong> — no name is attached. Only admins can read the suggestions.</p>
+      <textarea id="suggest-input" rows="5" placeholder="e.g. Add a colour for grating repairs in progress…"></textarea>
+      <p id="suggest-result" class="paste-result"></p>
+      <div id="suggest-admin" class="suggest-admin admin-only">
+        <h4>Collected suggestions (<span id="suggest-count">0</span>)</h4>
+        <ul id="suggest-list" class="suggest-list"></ul>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="suggest-send" class="btn btn-primary">Send anonymously</button>
     </div>
   </div>
 </div>

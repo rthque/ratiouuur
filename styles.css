@@ -588,3 +588,14 @@ body:not(.is-admin) .admin-only { display: none !important; }
 #paste-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .paste-result { white-space: pre-wrap; font-size: 13px; color: var(--text); margin: 10px 0 0; }
 .modal-body textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-family: inherit; font-size: 13.5px; background: #f9fbfd; color: var(--text); }
+
+/* anonymous suggestions */
+.suggest-hint { color: var(--text-muted); font-size: 11.5px; margin: 5px 2px 0; }
+.suggest-admin { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.suggest-admin h4 { margin: 0 0 8px; font-size: 13px; color: var(--text); }
+.suggest-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; max-height: 260px; overflow-y: auto; }
+.suggest-item { display: flex; align-items: flex-start; gap: 8px; background: #f9fbfd; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.suggest-text { flex: 1; font-size: 13px; line-height: 1.4; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.suggest-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; padding-top: 2px; }
+.suggest-del { padding: 2px 6px; font-size: 12px; line-height: 1; }
+.suggest-empty { color: var(--text-muted); font-size: 12.5px; font-style: italic; }
